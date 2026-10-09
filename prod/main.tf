@@ -18,15 +18,21 @@ terraform {
 provider "aws" {
   region              = "ap-northeast-2"
   allowed_account_ids = var.allowed_account_ids
+
+  default_tags {
+    tags = {
+      Project     = "KGB-V2"
+      Environment = "prod"
+      ManagedBy   = "Terraform"
+    }
+  }
 }
 
 module "network" {
   source = "../modules/network"
-
-  name = var.name
-
-  cidr = var.cidr
-  azs  = var.azs
+  name   = var.name
+  cidr   = var.cidr
+  azs    = var.azs
 
   public_subnets      = var.public_subnets
   private_app_subnets = var.private_app_subnets
