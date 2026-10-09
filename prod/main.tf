@@ -38,3 +38,13 @@ module "network" {
   private_app_subnets = var.private_app_subnets
   private_db_subnets  = var.private_db_subnets
 }
+
+module "security" {
+  source = "../modules/security"
+  name   = var.name
+  vpc_id = module.network.vpc_id
+
+  app_port                 = var.app_port
+  private_app_subnet_cidrs = var.private_app_subnets
+  operator_cidrs           = var.operator_cidrs
+}
