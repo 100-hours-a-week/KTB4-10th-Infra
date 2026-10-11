@@ -46,3 +46,24 @@ variable "operator_cidrs" {
   description = "Bastion SSH를 허용할 운영자 공인 IP CIDR 목록 (/32)"
   type        = list(string)
 }
+
+variable "github_backend_subjects" {
+  description = "백엔드  GitHub Actions OIDC Subject"
+  type        = list(string)
+}
+
+variable "github_frontend_subjects" {
+  description = "프론트엔드 GitHub Actions OIDC Subject"
+  type        = list(string)
+}
+
+variable "frontend_bucket_name" {
+  description = "프론트엔드 배포용  S3 버킷 이름"
+  type        = string
+}
+
+variable "frontend_cloudfront_distribution_id" {
+  description = "프론트엔드 배포용 CloudFront Distribution ID"
+  type        = string
+}
+
