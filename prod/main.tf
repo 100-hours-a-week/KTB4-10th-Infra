@@ -38,3 +38,14 @@ module "network" {
   private_app_subnets = var.private_app_subnets
   private_db_subnets  = var.private_db_subnets
 }
+
+module "iam" {
+  source = "../modules/iam"
+  name   = var.name
+
+  github_backend_subjects  = var.github_backend_subjects
+  github_frontend_subjects = var.github_frontend_subjects
+
+  frontend_bucket_name                = var.frontend_bucket_name
+  frontend_cloudfront_distribution_id = var.frontend_cloudfront_distribution_id
+}
