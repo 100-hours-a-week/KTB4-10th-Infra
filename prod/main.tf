@@ -39,6 +39,16 @@ module "network" {
   private_db_subnets  = var.private_db_subnets
 }
 
+module "security" {
+  source = "../modules/security"
+  name   = var.name
+  vpc_id = module.network.vpc_id
+
+  app_port                 = var.app_port
+  private_app_subnet_cidrs = var.private_app_subnets
+  operator_cidrs           = var.operator_cidrs
+}
+   
 module "iam" {
   source = "../modules/iam"
   name   = var.name
@@ -49,3 +59,5 @@ module "iam" {
   frontend_bucket_name                = var.frontend_bucket_name
   frontend_cloudfront_distribution_id = var.frontend_cloudfront_distribution_id
 }
+
+
