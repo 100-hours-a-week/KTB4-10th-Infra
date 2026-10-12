@@ -58,14 +58,14 @@ resource "aws_security_group" "monitoring" {
   }
 }
 
-# NAT/Bastion SG (AZ별 인스턴스가 같이 사용)
-resource "aws_security_group" "nat_bastion" {
-  name        = "${var.name}-nat-bastion-sg"
-  description = "NAT and bastion security group"
+# NAT SG (AZ별 인스턴스가 같이 사용)
+resource "aws_security_group" "nat" {
+  name        = "${var.name}-nat-sg"
+  description = "NAT instance security group"
   vpc_id      = var.vpc_id
 
   tags = {
-    Name = "${var.name}-nat-bastion-sg"
+    Name = "${var.name}-nat-sg"
   }
 }
 
@@ -141,17 +141,6 @@ resource "aws_vpc_security_group_egress_rule" "backend_task_https" {
 
 # ---------- ECS Host ----------
 
-# Bastion -> ECS Host
-resource "aws_vpc_security_group_ingress_rule" "ecs_host_ssh_from_bastion" {
-  security_group_id = aws_security_group.ecs_host.id
-  description       = "Allow SSH from bastion"
-
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
-  referenced_security_group_id = aws_security_group.nat_bastion.id
-}
-
 # Monitoring -> ECS Host (node-exporter)
 resource "aws_vpc_security_group_ingress_rule" "ecs_host_node_exporter_from_monitoring" {
   security_group_id = aws_security_group.ecs_host.id
@@ -198,39 +187,28 @@ resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_backend_task" {
   referenced_security_group_id = aws_security_group.backend_task.id
 }
 
-# Bastion -> RDS (운영자 SSH 터널)
-resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_bastion" {
+# NAT -> RDS (운영자 SSM 포트 포워딩)
+resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_nat" {
   security_group_id = aws_security_group.rds.id
-  description       = "Allow MySQL from bastion SSH tunnel"
+  description       = "Allow MySQL from NAT instance via SSM port forwarding"
 
   ip_protocol                  = "tcp"
   from_port                    = 3306
   to_port                      = 3306
-  referenced_security_group_id = aws_security_group.nat_bastion.id
+  referenced_security_group_id = aws_security_group.nat.id
 }
 
 # ---------- Monitoring ----------
 
-# Bastion -> Monitoring (SSH)
-resource "aws_vpc_security_group_ingress_rule" "monitoring_ssh_from_bastion" {
+# NAT -> Monitoring (Grafana SSM 포트 포워딩)
+resource "aws_vpc_security_group_ingress_rule" "monitoring_grafana_from_nat" {
   security_group_id = aws_security_group.monitoring.id
-  description       = "Allow SSH from bastion"
-
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
-  referenced_security_group_id = aws_security_group.nat_bastion.id
-}
-
-# Bastion -> Monitoring (Grafana SSH 터널)
-resource "aws_vpc_security_group_ingress_rule" "monitoring_grafana_from_bastion" {
-  security_group_id = aws_security_group.monitoring.id
-  description       = "Allow Grafana from bastion SSH tunnel"
+  description       = "Allow Grafana from NAT instance via SSM port forwarding"
 
   ip_protocol                  = "tcp"
   from_port                    = 3000
   to_port                      = 3000
-  referenced_security_group_id = aws_security_group.nat_bastion.id
+  referenced_security_group_id = aws_security_group.nat.id
 }
 
 # Monitoring -> ECS Host (node-exporter)
@@ -277,26 +255,13 @@ resource "aws_vpc_security_group_egress_rule" "monitoring_https" {
   cidr_ipv4   = "0.0.0.0/0"
 }
 
-# ---------- NAT/Bastion ----------
-
-# 운영자 -> Bastion
-resource "aws_vpc_security_group_ingress_rule" "nat_bastion_ssh_from_operator" {
-  for_each = toset(var.operator_cidrs)
-
-  security_group_id = aws_security_group.nat_bastion.id
-  description       = "Allow SSH from operator"
-
-  ip_protocol = "tcp"
-  from_port   = 22
-  to_port     = 22
-  cidr_ipv4   = each.value
-}
+# ---------- NAT ----------
 
 # Private app subnet -> NAT
-resource "aws_vpc_security_group_ingress_rule" "nat_bastion_https_from_private_app" {
+resource "aws_vpc_security_group_ingress_rule" "nat_https_from_private_app" {
   for_each = toset(var.private_app_subnet_cidrs)
 
-  security_group_id = aws_security_group.nat_bastion.id
+  security_group_id = aws_security_group.nat.id
   description       = "Allow HTTPS from private app subnet for NAT"
 
   ip_protocol = "tcp"
@@ -305,32 +270,10 @@ resource "aws_vpc_security_group_ingress_rule" "nat_bastion_https_from_private_a
   cidr_ipv4   = each.value
 }
 
-# Bastion -> ECS Host
-resource "aws_vpc_security_group_egress_rule" "nat_bastion_ssh_to_ecs_host" {
-  security_group_id = aws_security_group.nat_bastion.id
-  description       = "Allow SSH to ECS host"
-
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
-  referenced_security_group_id = aws_security_group.ecs_host.id
-}
-
-# Bastion -> Monitoring (SSH)
-resource "aws_vpc_security_group_egress_rule" "nat_bastion_ssh_to_monitoring" {
-  security_group_id = aws_security_group.nat_bastion.id
-  description       = "Allow SSH to monitoring"
-
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
-  referenced_security_group_id = aws_security_group.monitoring.id
-}
-
-# Bastion -> Monitoring (Grafana SSH 터널)
-resource "aws_vpc_security_group_egress_rule" "nat_bastion_grafana_to_monitoring" {
-  security_group_id = aws_security_group.nat_bastion.id
-  description       = "Allow Grafana SSH tunnel to monitoring"
+# NAT -> Monitoring (Grafana SSM 포트 포워딩)
+resource "aws_vpc_security_group_egress_rule" "nat_grafana_to_monitoring" {
+  security_group_id = aws_security_group.nat.id
+  description       = "Allow Grafana SSM port forwarding to monitoring"
 
   ip_protocol                  = "tcp"
   from_port                    = 3000
@@ -338,10 +281,10 @@ resource "aws_vpc_security_group_egress_rule" "nat_bastion_grafana_to_monitoring
   referenced_security_group_id = aws_security_group.monitoring.id
 }
 
-# Bastion -> RDS (운영자 SSH 터널)
-resource "aws_vpc_security_group_egress_rule" "nat_bastion_mysql_to_rds" {
-  security_group_id = aws_security_group.nat_bastion.id
-  description       = "Allow MySQL SSH tunnel to RDS"
+# NAT -> RDS (운영자 SSM 포트 포워딩)
+resource "aws_vpc_security_group_egress_rule" "nat_mysql_to_rds" {
+  security_group_id = aws_security_group.nat.id
+  description       = "Allow MySQL SSM port forwarding to RDS"
 
   ip_protocol                  = "tcp"
   from_port                    = 3306
@@ -350,8 +293,8 @@ resource "aws_vpc_security_group_egress_rule" "nat_bastion_mysql_to_rds" {
 }
 
 # NAT -> 인터넷
-resource "aws_vpc_security_group_egress_rule" "nat_bastion_https" {
-  security_group_id = aws_security_group.nat_bastion.id
+resource "aws_vpc_security_group_egress_rule" "nat_https" {
+  security_group_id = aws_security_group.nat.id
   description       = "Allow HTTPS to internet for NAT"
 
   ip_protocol = "tcp"

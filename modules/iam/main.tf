@@ -66,6 +66,12 @@ resource "aws_iam_role_policy_attachment" "ecs_instance" {
   policy_arn = "arn:${local.partition}:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
 }
 
+# Session Manager 접속
+resource "aws_iam_role_policy_attachment" "ecs_instance_ssm" {
+  role       = aws_iam_role.ecs_instance.name
+  policy_arn = "arn:${local.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "ecs_instance" {
   name = "${var.name}-ecs-instance-profile"
   role = aws_iam_role.ecs_instance.name
@@ -158,12 +164,86 @@ resource "aws_iam_role_policy" "monitoring" {
   policy = data.aws_iam_policy_document.monitoring.json
 }
 
+# Session Manager 접속
+resource "aws_iam_role_policy_attachment" "monitoring_ssm" {
+  role       = aws_iam_role.monitoring.name
+  policy_arn = "arn:${local.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "monitoring" {
   name = "${var.name}-monitoring-profile"
   role = aws_iam_role.monitoring.name
 
   tags = {
     Name = "${var.name}-monitoring-profile"
+  }
+}
+
+# ---------- NAT ----------
+
+# NAT 인스턴스 역할
+resource "aws_iam_role" "nat" {
+  name               = "${var.name}-nat-role"
+  description        = "NAT instance role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
+
+  tags = {
+    Name = "${var.name}-nat-role"
+  }
+}
+
+# Session Manager 접속
+resource "aws_iam_role_policy_attachment" "nat_ssm" {
+  role       = aws_iam_role.nat.name
+  policy_arn = "arn:${local.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "nat" {
+  name = "${var.name}-nat-profile"
+  role = aws_iam_role.nat.name
+
+  tags = {
+    Name = "${var.name}-nat-profile"
+  }
+}
+
+# ---------- 개발자 접근 ----------
+
+# NAT 인스턴스를 통한 SSM 포트 포워딩만 허용 (셸 접속 불가)
+data "aws_iam_policy_document" "developer_port_forward" {
+  statement {
+    sid     = "StartPortForwarding"
+    actions = ["ssm:StartSession"]
+
+    resources = concat(
+      [for id in var.nat_instance_ids : "arn:${local.partition}:ec2:${local.region}:${local.account_id}:instance/${id}"],
+      ["arn:${local.partition}:ssm:${local.region}::document/AWS-StartPortForwardingSessionToRemoteHost"]
+    )
+
+    # 문서를 지정하지 않은 기본 셸 세션까지 문서 권한을 검사
+    condition {
+      test     = "BoolIfExists"
+      variable = "ssm:SessionDocumentAccessCheck"
+      values   = ["true"]
+    }
+  }
+
+  # 본인이 연 세션만 연결/종료/재개
+  statement {
+    sid       = "ManageOwnSession"
+    actions   = ["ssmmessages:OpenDataChannel", "ssm:TerminateSession", "ssm:ResumeSession"]
+    resources = ["arn:${local.partition}:ssm:*:*:session/$${aws:userid}-*"]
+  }
+}
+
+# 개발자 사용자/그룹에 연결해서 사용
+resource "aws_iam_policy" "developer_port_forward" {
+  name        = "${var.name}-developer-port-forward-policy"
+  description = "Allow SSM port forwarding through NAT instance"
+  policy      = data.aws_iam_policy_document.developer_port_forward.json
+
+  tags = {
+    Name = "${var.name}-developer-port-forward-policy"
   }
 }
 

@@ -42,11 +42,6 @@ variable "app_port" {
   default     = 8080
 }
 
-variable "operator_cidrs" {
-  description = "Bastion SSH를 허용할 운영자 공인 IP CIDR 목록 (/32)"
-  type        = list(string)
-}
-
 variable "github_backend_subjects" {
   description = "백엔드  GitHub Actions OIDC Subject"
   type        = list(string)
@@ -67,3 +62,15 @@ variable "frontend_cloudfront_distribution_id" {
   type        = string
 }
 
+# ubuntu-resolute-26.04-amd64-server-20261003 (ap-northeast-2)
+variable "nat_ami_id" {
+  description = "NAT 인스턴스 AMI ID (Ubuntu 26.04, x86_64)"
+  type        = string
+  default     = "ami-0e677ebf2c8434c2a"
+}
+
+variable "nat_instance_type" {
+  description = "NAT 인스턴스 타입 (x86_64)"
+  type        = string
+  default     = "t3.micro"
+}
