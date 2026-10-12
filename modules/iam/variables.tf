@@ -22,3 +22,8 @@ variable "frontend_cloudfront_distribution_id" {
   description = "프론트엔드 CloudFront Distribution ID"
   type        = string
 }
+
+variable "nat_instance_ids" {
+  description = "개발자 포트 포워딩을 허용할 NAT 인스턴스 ID 목록"
+  type        = list(string)
+}

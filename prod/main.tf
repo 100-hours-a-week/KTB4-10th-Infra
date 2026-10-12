@@ -46,9 +46,8 @@ module "security" {
 
   app_port                 = var.app_port
   private_app_subnet_cidrs = var.private_app_subnets
-  operator_cidrs           = var.operator_cidrs
 }
-   
+
 module "iam" {
   source = "../modules/iam"
   name   = var.name
@@ -58,6 +57,20 @@ module "iam" {
 
   frontend_bucket_name                = var.frontend_bucket_name
   frontend_cloudfront_distribution_id = var.frontend_cloudfront_distribution_id
+
+  nat_instance_ids = module.nat.instance_ids
 }
 
+module "nat" {
+  source = "../modules/nat"
+  name   = var.name
+  azs    = var.azs
 
+  public_subnet_ids           = module.network.public_subnet_ids
+  private_app_route_table_ids = module.network.private_app_route_table_ids
+  security_group_id           = module.security.nat_security_group_id
+
+  ami_id                = var.nat_ami_id
+  instance_type         = var.nat_instance_type
+  instance_profile_name = module.iam.nat_instance_profile_name
+}

@@ -28,6 +28,11 @@ output "monitoring_instance_profile_name" {
   value       = aws_iam_instance_profile.monitoring.name
 }
 
+output "nat_instance_profile_name" {
+  description = "NAT 인스턴스 프로파일 이름"
+  value       = aws_iam_instance_profile.nat.name
+}
+
 output "github_backend_deploy_role_arn" {
   description = "백엔드 GitHub Actions 배포 역할 ARN"
   value       = aws_iam_role.github_backend_deploy.arn
@@ -36,4 +41,9 @@ output "github_backend_deploy_role_arn" {
 output "github_frontend_deploy_role_arn" {
   description = "프론트엔드 GitHub Actions 배포 역할 ARN"
   value       = aws_iam_role.github_frontend_deploy.arn
+}
+
+output "developer_port_forward_policy_arn" {
+  description = "개발자 SSM 포트 포워딩 정책 ARN"
+  value       = aws_iam_policy.developer_port_forward.arn
 }

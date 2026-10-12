@@ -23,7 +23,7 @@ output "monitoring_security_group_id" {
   value       = aws_security_group.monitoring.id
 }
 
-output "nat_bastion_security_group_id" {
-  description = "NAT/Bastion security group ID"
-  value       = aws_security_group.nat_bastion.id
+output "nat_security_group_id" {
+  description = "NAT instance security group ID"
+  value       = aws_security_group.nat.id
 }
