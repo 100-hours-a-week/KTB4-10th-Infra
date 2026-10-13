@@ -11,10 +11,10 @@ resource "aws_instance" "nat" {
   # EIP만 사용
   associate_public_ip_address = false
 
-  # # EIP 연결 후 공인 IP 상태 차이로 인한 불필요한 교체가 발생한다면 사용
-  # lifecycle {
-  #   ignore_changes = [associate_public_ip_address]
-  # }
+  # EIP가 붙으면 true로 읽혀서 인스턴스가 교체되는 것 방지
+  lifecycle {
+    ignore_changes = [associate_public_ip_address]
+  }
 
   # NAT 패킷 전달 허용
   source_dest_check = false
