@@ -74,3 +74,23 @@ module "nat" {
   instance_type         = var.nat_instance_type
   instance_profile_name = module.iam.nat_instance_profile_name
 }
+
+module "rds" {
+  source = "../modules/rds"
+  name   = var.name
+
+  subnet_ids        = module.network.private_db_subnet_ids
+  security_group_id = module.security.rds_security_group_id
+
+  engine_version         = var.db_engine_version
+  parameter_group_family = var.db_parameter_group_family
+  instance_class         = var.db_instance_class
+  db_name                = var.db_name
+  master_password        = var.db_master_password
+
+  allocated_storage     = var.db_allocated_storage
+  max_allocated_storage = var.db_max_allocated_storage
+
+  backup_window      = var.db_backup_window
+  maintenance_window = var.db_maintenance_window
+}

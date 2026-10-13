@@ -74,3 +74,60 @@ variable "nat_instance_type" {
   type        = string
   default     = "t3.micro"
 }
+
+variable "db_name" {
+  description = " RDS 생성 시 만들 데이터베이스 이름"
+  type        = string
+  default     = "kgb"
+}
+
+variable "db_master_password" {
+  description = "RDS 마스터 비밀번호"
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "db_engine_version" {
+  description = "RDS MySQL 엔진 버전"
+  type        = string
+  default     = "8.4.11"
+}
+
+variable "db_parameter_group_family" {
+  description = "RDS 파라미터 그룹 패밀리"
+  type        = string
+  default     = "mysql8.4"
+}
+
+variable "db_instance_class" {
+  description = "RDS 인스턴스 클래스"
+  type        = string
+  default     = "db.t3.small"
+}
+
+variable "db_allocated_storage" {
+  description = "RDS 초기 스토리지 크기 (GiB)"
+  type        = number
+  default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "RDS 스토리지 자동 확장 상한 (GiB)"
+  type        = number
+  default     = 50
+}
+
+# 02:00-03:00 KST
+variable "db_backup_window" {
+  description = "RDS 자동 백업 시간대 (UTC)"
+  type        = string
+  default     = "17:00-18:00"
+}
+
+# 월요일 03:00-04:00 KST
+variable "db_maintenance_window" {
+  description = "RDS 유지보수 시간대 (UTC)"
+  type        = string
+  default     = "sun:18:00-sun:19:00"
+}
