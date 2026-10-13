@@ -78,6 +78,6 @@ resource "aws_db_instance" "main" {
   final_snapshot_identifier = "${var.name}-mysql-final"
 
   tags = {
-    Name = "${var.name}-mysql"
+    Name = "${var.name}-db"
   }
 }
