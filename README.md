@@ -31,7 +31,7 @@ KGB V2 인프라를 AWS와 Terraform으로 구축한다.
                           └─────────┬─────────┘
                                     │
                               RDS MySQL
-                              (Single-AZ)
+                              (Multi-AZ)
 
               Private App A             Private App C
                     │                         │
