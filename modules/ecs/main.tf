@@ -106,6 +106,13 @@ resource "aws_autoscaling_group" "ecs" {
     value               = "${var.name}-ecs-host"
     propagate_at_launch = false
   }
+
+  # Capacity Provider 연결 시 ECS가 자동으로 붙이는 태그
+  tag {
+    key                 = "AmazonECSManaged"
+    value               = ""
+    propagate_at_launch = true
+  }
 }
 
 # ECS Capacity Provider (managed scaling 비활성화, 증설은 배포 파이프라인에서)

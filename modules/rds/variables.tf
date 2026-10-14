@@ -72,3 +72,9 @@ variable "maintenance_window" {
   description = "유지보수 시간대 (UTC, 백업 시간대와 겹치면 안 됨)"
   type        = string
 }
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs 보존 기간 (일)"
+  type        = number
+  default     = 90
+}
