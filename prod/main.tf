@@ -94,3 +94,17 @@ module "rds" {
   backup_window      = var.db_backup_window
   maintenance_window = var.db_maintenance_window
 }
+
+module "ecs" {
+  source = "../modules/ecs"
+  name   = var.name
+
+  subnet_ids            = module.network.private_app_subnet_ids
+  security_group_id     = module.security.ecs_host_security_group_id
+  instance_profile_name = module.iam.ecs_instance_profile_name
+
+  instance_type    = var.ecs_instance_type
+  min_size         = var.ecs_min_size
+  max_size         = var.ecs_max_size
+  desired_capacity = var.ecs_desired_capacity
+}

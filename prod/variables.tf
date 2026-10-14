@@ -131,3 +131,27 @@ variable "db_maintenance_window" {
   type        = string
   default     = "sun:18:00-sun:19:00"
 }
+
+variable "ecs_instance_type" {
+  description = "ECS Host 인스턴스 타입"
+  type        = string
+  default     = "t3.small"
+}
+
+variable "ecs_min_size" {
+  description = "ECS Host 최소 인스턴스 수"
+  type        = number
+  default     = 2
+}
+
+variable "ecs_max_size" {
+  description = "ECS Host 최대 인스턴스 수 (배포용 2대 포함)"
+  type        = number
+  default     = 4
+}
+
+variable "ecs_desired_capacity" {
+  description = "ECS Host 초기 인스턴스 수"
+  type        = number
+  default     = 2
+}
