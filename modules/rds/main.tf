@@ -81,3 +81,15 @@ resource "aws_db_instance" "main" {
     Name = "${var.name}-db"
   }
 }
+
+# RDS 로그 그룹
+resource "aws_cloudwatch_log_group" "main" {
+  for_each = toset(aws_db_instance.main.enabled_cloudwatch_logs_exports)
+
+  name              = "/aws/rds/instance/${aws_db_instance.main.identifier}/${each.key}"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name = "${var.name}-db-${each.key}-logs"
+  }
+}
