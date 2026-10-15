@@ -101,6 +101,13 @@ data "aws_iam_policy_document" "task_execution" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = ["arn:${local.partition}:secretsmanager:${local.region}:${local.account_id}:secret:${var.name}/*"]
   }
+
+  # 컨테이너 환경 변수로 주입할 시크릿 (기본 KMS 키 aws/ssm으로 암호화)
+  statement {
+    sid       = "ReadParameters"
+    actions   = ["ssm:GetParameters"]
+    resources = ["arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.name}/*"]
+  }
 }
 
 resource "aws_iam_role_policy" "task_execution" {
@@ -123,6 +130,31 @@ resource "aws_iam_role" "task" {
   tags = {
     Name = "${var.name}-task-role"
   }
+}
+
+# Backend 파일 저장소 (V1 kgb-be-ec2-role의 s3access와 같은 범위)
+data "aws_iam_policy_document" "task" {
+  statement {
+    sid       = "ListStorageBucket"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:${local.partition}:s3:::${var.backend_storage_bucket_name}"]
+  }
+
+  statement {
+    sid = "ReadWriteStorageObjects"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["arn:${local.partition}:s3:::${var.backend_storage_bucket_name}/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "task" {
+  name   = "${var.name}-task-policy"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.task.json
 }
 
 # ---------- Monitoring ----------

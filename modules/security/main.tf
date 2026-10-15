@@ -14,18 +14,7 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Backend Task SG (awsvpc 모드의 태스크 ENI에 연결)
-resource "aws_security_group" "backend_task" {
-  name        = "${var.name}-backend-task-sg"
-  description = "Backend task security group"
-  vpc_id      = var.vpc_id
-
-  tags = {
-    Name = "${var.name}-backend-task-sg"
-  }
-}
-
-# ECS Host SG
+# ECS Host SG (bridge 모드. Backend 컨테이너도 사용)
 resource "aws_security_group" "ecs_host" {
   name        = "${var.name}-ecs-host-sg"
   description = "ECS host security group"
@@ -82,23 +71,34 @@ resource "aws_vpc_security_group_ingress_rule" "alb_https_from_cloudfront" {
   prefix_list_id = data.aws_ec2_managed_prefix_list.cloudfront.id
 }
 
-# ALB -> Backend Task
-resource "aws_vpc_security_group_egress_rule" "alb_to_backend_task" {
+# ALB -> ECS Host (Backend API)
+resource "aws_vpc_security_group_egress_rule" "alb_to_ecs_host_app" {
   security_group_id = aws_security_group.alb.id
   description       = "Allow traffic from ALB to backend application port"
 
   ip_protocol                  = "tcp"
   from_port                    = var.app_port
   to_port                      = var.app_port
-  referenced_security_group_id = aws_security_group.backend_task.id
+  referenced_security_group_id = aws_security_group.ecs_host.id
 }
 
-# ---------- Backend Task ----------
+# ALB -> ECS Host (Backend health check)
+resource "aws_vpc_security_group_egress_rule" "alb_to_ecs_host_management" {
+  security_group_id = aws_security_group.alb.id
+  description       = "Allow health check from ALB to backend management port"
 
-# ALB -> Backend Task
-resource "aws_vpc_security_group_ingress_rule" "backend_task_app_from_alb" {
-  security_group_id = aws_security_group.backend_task.id
-  description       = "Allow application port from ALB"
+  ip_protocol                  = "tcp"
+  from_port                    = var.management_port
+  to_port                      = var.management_port
+  referenced_security_group_id = aws_security_group.ecs_host.id
+}
+
+# ---------- ECS Host ----------
+
+# ALB -> ECS Host (Backend API)
+resource "aws_vpc_security_group_ingress_rule" "ecs_host_app_from_alb" {
+  security_group_id = aws_security_group.ecs_host.id
+  description       = "Allow backend application port from ALB"
 
   ip_protocol                  = "tcp"
   from_port                    = var.app_port
@@ -106,40 +106,27 @@ resource "aws_vpc_security_group_ingress_rule" "backend_task_app_from_alb" {
   referenced_security_group_id = aws_security_group.alb.id
 }
 
-# Monitoring -> Backend Task (Actuator 메트릭 수집)
-resource "aws_vpc_security_group_ingress_rule" "backend_task_app_from_monitoring" {
-  security_group_id = aws_security_group.backend_task.id
-  description       = "Allow actuator metrics scrape from monitoring"
+# ALB -> ECS Host (Backend health check)
+resource "aws_vpc_security_group_ingress_rule" "ecs_host_management_from_alb" {
+  security_group_id = aws_security_group.ecs_host.id
+  description       = "Allow backend health check from ALB"
 
   ip_protocol                  = "tcp"
-  from_port                    = var.app_port
-  to_port                      = var.app_port
+  from_port                    = var.management_port
+  to_port                      = var.management_port
+  referenced_security_group_id = aws_security_group.alb.id
+}
+
+# Monitoring -> ECS Host (Backend Actuator 메트릭 수집)
+resource "aws_vpc_security_group_ingress_rule" "ecs_host_management_from_monitoring" {
+  security_group_id = aws_security_group.ecs_host.id
+  description       = "Allow backend actuator scrape from monitoring"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.management_port
+  to_port                      = var.management_port
   referenced_security_group_id = aws_security_group.monitoring.id
 }
-
-# Backend Task -> RDS
-resource "aws_vpc_security_group_egress_rule" "backend_task_to_rds" {
-  security_group_id = aws_security_group.backend_task.id
-  description       = "Allow MySQL to RDS"
-
-  ip_protocol                  = "tcp"
-  from_port                    = 3306
-  to_port                      = 3306
-  referenced_security_group_id = aws_security_group.rds.id
-}
-
-# Backend Task -> 외부 HTTPS
-resource "aws_vpc_security_group_egress_rule" "backend_task_https" {
-  security_group_id = aws_security_group.backend_task.id
-  description       = "Allow HTTPS to external APIs and AWS services"
-
-  ip_protocol = "tcp"
-  from_port   = 443
-  to_port     = 443
-  cidr_ipv4   = "0.0.0.0/0"
-}
-
-# ---------- ECS Host ----------
 
 # Monitoring -> ECS Host (node-exporter)
 resource "aws_vpc_security_group_ingress_rule" "ecs_host_node_exporter_from_monitoring" {
@@ -152,18 +139,29 @@ resource "aws_vpc_security_group_ingress_rule" "ecs_host_node_exporter_from_moni
   referenced_security_group_id = aws_security_group.monitoring.id
 }
 
-# Monitoring -> ECS Host (cAdvisor)
+# Monitoring -> ECS Host (cAdvisor, Backend 관리 포트와 겹치지 않게 별도 포트)
 resource "aws_vpc_security_group_ingress_rule" "ecs_host_cadvisor_from_monitoring" {
   security_group_id = aws_security_group.ecs_host.id
   description       = "Allow cAdvisor scrape from monitoring"
 
   ip_protocol                  = "tcp"
-  from_port                    = 8081
-  to_port                      = 8081
+  from_port                    = var.cadvisor_port
+  to_port                      = var.cadvisor_port
   referenced_security_group_id = aws_security_group.monitoring.id
 }
 
-# ECS Host -> 외부 HTTPS
+# ECS Host -> RDS (Backend 컨테이너)
+resource "aws_vpc_security_group_egress_rule" "ecs_host_to_rds" {
+  security_group_id = aws_security_group.ecs_host.id
+  description       = "Allow MySQL from backend container to RDS"
+
+  ip_protocol                  = "tcp"
+  from_port                    = 3306
+  to_port                      = 3306
+  referenced_security_group_id = aws_security_group.rds.id
+}
+
+# ECS Host -> 외부 HTTPS (ECS 에이전트, 이미지 다운로드, Backend 외부 API)
 resource "aws_vpc_security_group_egress_rule" "ecs_host_https" {
   security_group_id = aws_security_group.ecs_host.id
   description       = "Allow HTTPS for ECS agent and image pull"
@@ -176,15 +174,15 @@ resource "aws_vpc_security_group_egress_rule" "ecs_host_https" {
 
 # ---------- RDS ----------
 
-# Backend Task -> RDS
-resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_backend_task" {
+# ECS Host -> RDS (Backend 컨테이너)
+resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_ecs_host" {
   security_group_id = aws_security_group.rds.id
-  description       = "Allow MySQL from backend task"
+  description       = "Allow MySQL from backend container on ECS host"
 
   ip_protocol                  = "tcp"
   from_port                    = 3306
   to_port                      = 3306
-  referenced_security_group_id = aws_security_group.backend_task.id
+  referenced_security_group_id = aws_security_group.ecs_host.id
 }
 
 # NAT -> RDS (운영자 SSM 포트 포워딩)
@@ -228,20 +226,20 @@ resource "aws_vpc_security_group_egress_rule" "monitoring_to_cadvisor" {
   description       = "Allow cAdvisor scrape to ECS host"
 
   ip_protocol                  = "tcp"
-  from_port                    = 8081
-  to_port                      = 8081
+  from_port                    = var.cadvisor_port
+  to_port                      = var.cadvisor_port
   referenced_security_group_id = aws_security_group.ecs_host.id
 }
 
-# Monitoring -> Backend Task (Actuator 메트릭 수집)
-resource "aws_vpc_security_group_egress_rule" "monitoring_to_backend_task" {
+# Monitoring -> ECS Host (Backend Actuator 메트릭 수집)
+resource "aws_vpc_security_group_egress_rule" "monitoring_to_ecs_host_management" {
   security_group_id = aws_security_group.monitoring.id
-  description       = "Allow actuator metrics scrape to backend task"
+  description       = "Allow backend actuator scrape to ECS host"
 
   ip_protocol                  = "tcp"
-  from_port                    = var.app_port
-  to_port                      = var.app_port
-  referenced_security_group_id = aws_security_group.backend_task.id
+  from_port                    = var.management_port
+  to_port                      = var.management_port
+  referenced_security_group_id = aws_security_group.ecs_host.id
 }
 
 # Monitoring -> 외부 HTTPS

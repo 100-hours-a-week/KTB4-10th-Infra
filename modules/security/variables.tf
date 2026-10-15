@@ -13,6 +13,17 @@ variable "app_port" {
   type        = number
 }
 
+variable "management_port" {
+  description = "Backend 관리 포트 (Actuator health, prometheus)"
+  type        = number
+}
+
+variable "cadvisor_port" {
+  description = "ECS Host의 cAdvisor 포트"
+  type        = number
+  default     = 8082
+}
+
 variable "private_app_subnet_cidrs" {
   description = "NAT를 사용하는 Backend Private subnet CIDR 블록 목록"
   type        = list(string)

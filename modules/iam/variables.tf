@@ -23,6 +23,11 @@ variable "frontend_cloudfront_distribution_id" {
   type        = string
 }
 
+variable "backend_storage_bucket_name" {
+  description = "Backend가 파일을 저장하는 S3 버킷 이름"
+  type        = string
+}
+
 variable "nat_instance_ids" {
   description = "개발자 포트 포워딩을 허용할 NAT 인스턴스 ID 목록"
   type        = list(string)

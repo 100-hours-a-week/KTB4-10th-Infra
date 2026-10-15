@@ -45,6 +45,7 @@ module "security" {
   vpc_id = module.network.vpc_id
 
   app_port                 = var.app_port
+  management_port          = var.management_port
   private_app_subnet_cidrs = var.private_app_subnets
 }
 
@@ -57,6 +58,8 @@ module "iam" {
 
   frontend_bucket_name                = var.frontend_bucket_name
   frontend_cloudfront_distribution_id = var.frontend_cloudfront_distribution_id
+
+  backend_storage_bucket_name = var.backend_storage_bucket_name
 
   nat_instance_ids = module.nat.instance_ids
 }
@@ -107,4 +110,23 @@ module "ecs" {
   min_size         = var.ecs_min_size
   max_size         = var.ecs_max_size
   desired_capacity = var.ecs_desired_capacity
+}
+
+module "backend" {
+  source = "../modules/backend"
+  name   = var.name
+
+  cluster_arn            = module.ecs.cluster_arn
+  capacity_provider_name = module.ecs.capacity_provider_name
+  execution_role_arn     = module.iam.task_execution_role_arn
+  task_role_arn          = module.iam.task_role_arn
+
+  image           = var.backend_image
+  app_port        = var.app_port
+  management_port = var.management_port
+  memory          = var.backend_memory
+  desired_count   = var.backend_desired_count
+
+  # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
+  environment = local.backend_environment
 }
