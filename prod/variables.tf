@@ -172,7 +172,7 @@ variable "backend_image" {
 variable "backend_desired_count" {
   description = "실행할 Backend Task 수"
   type        = number
-  default     = 2
+  default     = 0
 }
 
 variable "backend_memory" {
@@ -185,7 +185,7 @@ variable "backend_memory" {
 variable "backend_db_username" {
   description = "Backend가 사용할 RDS 계정 이름"
   type        = string
-  default     = "kgb_app"
+  default     = "kgb"
 }
 
 variable "backend_storage_bucket_name" {

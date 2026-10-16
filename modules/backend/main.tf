@@ -60,6 +60,11 @@ resource "aws_ecs_task_definition" "backend" {
       image     = var.image
       essential = true
 
+      # AWS가 저장 시 빈 값으로 채우는 항목. 코드에 없으면 매 plan마다 교체로 표시됨
+      mountPoints    = []
+      volumesFrom    = []
+      systemControls = []
+
       # 넘으면 컨테이너가 강제 종료되는 상한 (서버당 1개 배치는 distinctInstance가 보장)
       memory = var.memory
 
