@@ -1,359 +1,322 @@
 # KGB V2 ECS 인프라 설계
 
+2026-10-16 기준.
+
+개념 설명은 [ecs-guide.md](ecs-guide.md) 참고
+
 ## 1. 설계 목적
 
 KGB V2의 Spring Boot Backend를 AWS ECS on EC2 환경에서 운영한다.
 
-주요 목표는 다음과 같다.
-
 - Backend Task 2개를 서로 다른 EC2 인스턴스에서 실행한다.
 - 가능한 한 서로 다른 가용 영역(AZ)에 Backend Task를 분산한다.
-- Rolling Deployment 중 최소 2개의 정상 Backend Task를 유지한다.
-- 배포 시 필요한 EC2 용량을 일시적으로 확장한다.
-- 트래픽 기반 Auto Scaling은 부하 테스트 이후 도입 여부와 기준을 결정한다.
+- 배포 시 필요한 EC2 용량을 일시적으로 확장한다(블루/그린 검토 중).
+- 트래픽 기반 Auto Scaling은 기준 결정 필요
 
 ## 2. 아키텍처
 
 ```text
-CloudFront
-    │
-    ▼
-Application Load Balancer
+CloudFront (V1 리소스 재사용)
     │ HTTPS 443
     ▼
-ECS Cluster
+Application Load Balancer (예정)
+    │ 8080 (API) / 8081 (헬스 체크)
+    ▼
+ECS Cluster (kgb-prod-cluster)
     │
-    └── ECS Service (Backend)
-            │
-            ├── EC2-A (ap-northeast-2a)
-            │     ├── Spring Boot Task
-            │     └── Monitoring Task
-            │
-            └── EC2-B (ap-northeast-2c)
-                  ├── Spring Boot Task
-                  └── Monitoring Task
+    ├── EC2 (ap-northeast-2a, private-app)
+    │     ├── Backend Task        :8080, :8081
+    │     ├── node-exporter       :9100 (예정, Daemon)
+    │     └── cAdvisor            :8082 (예정, Daemon)
+    │
+    └── EC2 (ap-northeast-2c, private-app)
+          ├── Backend Task        :8080, :8081
+          ├── node-exporter       :9100 (예정, Daemon)
+          └── cAdvisor            :8082 (예정, Daemon)
+
+Backend → RDS (3306, VPC 내부)
+Backend → NAT → 인터넷 (443: GHCR, 카카오, Tour API, S3 등)
 ```
 
 - ECS Cluster는 Backend 컨테이너의 실행 환경을 제공한다.
-- ECS Service는 원하는 Backend Task 수를 유지한다.
 - Auto Scaling Group(ASG)은 ECS용 EC2 인스턴스를 관리한다.
 - Capacity Provider는 ECS와 ASG를 연결한다.
-- ALB는 정상 상태의 Backend Task로 요청을 전달한다.
+- ECS Service는 원하는 Backend Task 수를 유지한다.
+- ALB는 정상 상태의 Backend Task로 요청을 전달한다(예정).
 
 ## 3. ECS 실행 방식
 
-| 항목                     | 설정               |
-|------------------------|------------------|
-| ECS Launch Type        | EC2              |
-| EC2 인스턴스               | t3.small         |
-| ECS Service Scheduling | REPLICA          |
-| Backend Desired Count  | 2                |
-| Network Mode           | awsvpc           |
-| Backend Container Port | 8080             |
-| ALB Target Group Type  | ip               |
-| Placement Constraint   | distinctInstance |
-| Placement Strategy     | spread (AZ 기준)   |
+| 항목                     | 설정                                    |
+|------------------------|---------------------------------------|
+| ECS Launch Type        | EC2 (Capacity Provider)               |
+| EC2 인스턴스               | t3.small                              |
+| ECS Service Scheduling | REPLICA                               |
+| Backend Desired Count  | 운영 2 (현재 0)                           |
+| Network Mode           | `bridge`                              |
+| Port Mapping           | 8080:8080 (API), 8081:8081 (Actuator) |
+| ALB Target Group Type  | `instance`                            |
+| Placement Constraint   | `distinctInstance`                    |
+| Placement Strategy     | `spread` (AZ 기준)                      |
 
 ### 3.1 Task 배치 정책
 
-`distinctInstance`를 사용하여 동일 ECS Service의 Backend Task가 서로 다른 EC2 인스턴스에 배치되도록 한다.
-
-AZ 기준 `spread` 전략을 사용하여 Backend Task가 서로 다른 AZ에 분산되도록 유도한다.
-
-단, 다음 사항에 유의한다.
+`distinctInstance`로 같은 Service의 Backend Task가 서로 다른 EC2에 배치되도록 한다. AZ 기준 `spread`로 서로 다른 AZ에 분산되도록 유도한다.
 
 - `distinctInstance`는 EC2 인스턴스 단위의 분리를 보장한다.
 - AZ 기준 `spread`는 분산을 유도하는 전략이며, AZ별 Task 1개를 절대적으로 보장하지 않는다.
-- 따라서 배포 완료 후 실제 Task의 AZ 분포를 검증해야 한다.
+- 배포 완료 후 실제 Task의 AZ 분포를 검증해야 한다.
+
+### 3.2 네트워크 모드: bridge
+
+| 항목        | bridge (선택)                                | awsvpc                           |
+|-----------|--------------------------------------------|----------------------------------|
+| 컨테이너 네트워크 | EC2 네트워크를 Docker 브리지로 공유                   | Task마다 ENI와 IP                   |
+| 적용되는 SG   | **EC2의 SG (`ecs-host-sg`)**                | Task의 SG                         |
+| 포트        | 호스트 포트에 매핑                                 | 컨테이너 포트 그대로                      |
+| ALB 대상 타입 | `instance`                                 | `ip`                             |
+| 선택 이유     | V1에서 사용하던 방식으로 운영 경험이 있음. Task별 ENI가 필요 없음 | `t3.small`은 ENI 최대 3개라 Task 수 제한 |
+
+bridge에서는 Task에 SG를 붙일 수 없어, awsvpc용으로 만들었던 `backend-task-sg`를 삭제하고 Backend 관련 규칙을 `ecs-host-sg`로 옮겼다.
+
+### 3.3 포트
+
+| 포트   | 용도                                                         | 허용 출발지                 |
+|------|------------------------------------------------------------|------------------------|
+| 8080 | Backend API                                                | ALB                    |
+| 8081 | Backend 관리 포트 (`/actuator/health`, `/actuator/prometheus`) | ALB(헬스 체크), Monitoring |
+| 8082 | cAdvisor (예정)                                              | Monitoring             |
+| 9100 | node-exporter (예정)                                         | Monitoring             |
+
+- 8081은 ALB Listener에 연결하지 않으므로 외부에서 접근할 수 없다. ALB는 헬스 체크 요청만 8081로 보낸다.
+- 호스트 포트는 고정이다. EC2당 Backend Task가 1개라 동적 포트의 이점이 없고, SG를 포트 하나로 좁게 열 수 있다.
+
+### 3.4 메모리
+
+| 항목                         | 값             |
+|----------------------------|---------------|
+| EC2가 Task에 할당 가능한 메모리      | 1913 MiB (실측) |
+| Backend 컨테이너 상한 (`memory`) | 1536 MiB      |
+| 모니터링 Daemon 몫              | 약 377 MiB     |
+
+- V1 Backend 실사용량은 약 514 MiB(`docker stats` 측정)이다.
+- V1 cAdvisor + node-exporter 실사용량은 약 58 MiB이다.
+- 상한을 넘으면 컨테이너가 강제 종료된다.
+- JVM 힙은 컨테이너 상한 기준으로 정해진다(기본 약 25%). JVM 메모리 옵션 여부는 Backend 팀 확인이 필요하다.
 
 ## 4. EC2 용량 관리
 
 ### 4.1 Auto Scaling Group
 
-| 항목               | 설정                              |
-|------------------|---------------------------------|
-| Instance Type    | t3.small                        |
-| AMI              | ECS Optimized Amazon Linux 2023 |
-| Min Size         | 2                               |
-| Desired Capacity | 2                               |
-| Max Size         | 3                               |
-| Subnet           | Private App Subnet 2a, 2c       |
+| 항목                  | 설정                 |
+|---------------------|--------------------|
+| 이름                  | `kgb-prod-ecs-asg` |
+| Instance Type       | t3.small           |
+| Min / Desired / Max | 2 / 2 / 4          |
+| Subnet              | private-app 2a, 2c |
+| Health Check        | EC2                |
 
-초기 운영 시 EC2 인스턴스 2대를 유지한다.
+- Max 4는 블루/그린 배포 시 기존 2대 + 신규 2대를 고려한 값이다.
+- `desired_capacity`는 `ignore_changes`로 처리한다. 배포 중 늘린 대수를 다음 apply가 되돌려 서버를 종료하지 않도록 하기 위함이다.
+- ASG 안의 인스턴스는 정지(stop)하면 ASG가 교체한다. 비용을 줄이려면 ASG를 0대로 줄인다.
+- Capacity Provider를 연결하면 ECS가 ASG에 `AmazonECSManaged` 태그를 자동으로 붙인다. 코드에도 같은 태그를 선언해 plan 차이를 없앴다.
 
-ASG는 EC2 인스턴스 장애 발생 시 Desired Capacity를 복구하도록 구성한다.
+### 4.2 Launch Template
 
-단, EC2 인스턴스 수가 복구되었다고 해서 Backend 서비스의 정상 상태가 즉시 복구되는 것은 아니다.
+| 항목               | 설정                                                                                        |
+|------------------|-------------------------------------------------------------------------------------------|
+| AMI              | SSM `/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id` (apply 시점 최신) |
+| 루트 볼륨            | gp3 30GiB, 암호화                                                                            |
+| Instance Profile | `kgb-prod-ecs-instance-profile` (ECS 등록, SSM)                                             |
+| IMDS             | IMDSv2 필수, hop limit 1                                                                    |
+| user data        | `ECS_CLUSTER=kgb-prod-cluster`, `ECS_ENABLE_TASK_IAM_ROLE=true`                           |
+| 태그               | 인스턴스와 볼륨에 `Name` + provider `default_tags`                                                |
 
-### 4.2 ECS Capacity Provider
+- AMI는 보안 패치 반영을 위해 자동 조회한다. AWS가 새 AMI를 내면 plan에 Launch Template 변경이 나타나고, 이후 새로 뜨는 EC2부터 적용된다. 기존 EC2는 바뀌지 않는다.
+- hop limit 1로 bridge 컨테이너가 IMDS에 접근하지 못하게 해서, 컨테이너가 EC2 Role 자격 증명을 가져갈 수 없다. 컨테이너 권한은 Task Role로만 받는다.
+- ASG가 만드는 EC2와 볼륨에는 provider `default_tags`가 자동으로 붙지 않아 `aws_default_tags` data 소스로 직접 지정함.
 
-ECS Capacity Provider를 ASG와 연결한다.
+### 4.3 ECS Capacity Provider
 
-초기에는 배포 파이프라인에서 EC2 증설을 직접 제어하는 방식을 검토한다.
+| 항목                             | 설정                                  |
+|--------------------------------|-------------------------------------|
+| 이름                             | `kgb-prod-ecs-cp`                   |
+| Managed Scaling                | DISABLED                            |
+| Managed Termination Protection | DISABLED                            |
+| 클러스터 기본 전략                     | `kgb-prod-ecs-cp`, weight 1, base 0 |
 
-이에 따라 초기 구성에서는 Capacity Provider Managed Scaling을 비활성화하는 방향으로 설계한다.
+현재는 ECS가 Task 수요에 따라 EC2를 자동으로 늘리지 않는다. 블루/그린 배포를 도입하면 Managed Scaling과 Termination Protection을 켜는 방안을 검토한다(6장).
 
-```hcl
-managed_scaling {
-  status = "DISABLED"
-}
-```
+## 5. Backend Task Definition과 Service
 
-이 설정에서는 ECS가 Task 수요에 따라 EC2 인스턴스 수를 자동으로 증가시키지 않는다.
+### 5.1 Task Definition
 
-배포 시 EC2 증설과 축소는 별도의 배포 파이프라인에서 관리해야 한다.
+| 항목             | 설정                                                                 |
+|----------------|--------------------------------------------------------------------|
+| Family         | `kgb-prod-backend`                                                 |
+| 이미지            | `ghcr.io/100-hours-a-week/ktb4-10-be:6b98f8f-20261013` (V1과 같은 버전) |
+| 이미지 인증         | `repositoryCredentials` → Secrets Manager `kgb-prod/ghcr`          |
+| Execution Role | `kgb-prod-task-execution-role`                                     |
+| Task Role      | `kgb-prod-task-role`                                               |
+| 로그             | `awslogs`, Log Group `/kgb-prod/backend` (90일)                     |
+| 컨테이너 헬스 체크     | 없음 (이미지에 curl 포함 여부 미확인, ALB 헬스 체크 사용 예정)                          |
 
-## 5. ECS 무중단 배포 전략
+- GHCR 이미지가 비공개라 인증이 필요하다. ECS 비공개 레지스트리 인증은 Secrets Manager만 지원한다. 값은
+  `{"username": ..., "password": <read:packages PAT>}` 형식이다.
+- AWS가 저장 시 `mountPoints`, `volumesFrom`, `systemControls`를 빈 값으로 채우므로 코드에도 빈 값으로 명시. 없으면 매 plan마다 Task Definition 교체가
+  나타난다.
 
-### 5.1 배포 설정
+### 5.2 환경 변수와 비밀 값
 
-| 항목                         | 설정                 |
-|----------------------------|--------------------|
-| Deployment Type            | Rolling Deployment |
-| Minimum Healthy Percent    | 100                |
-| Maximum Percent            | 200                |
-| Deployment Circuit Breaker | Enabled            |
-| Automatic Rollback         | Enabled            |
+| 구분   | 위치                                                   | 개수 | 예                                               |
+|------|------------------------------------------------------|----|-------------------------------------------------|
+| 일반 값 | `prod/backend.tf` (`locals`)                         | 17 | `DB_URL`, `DB_USERNAME`, `CORS_ALLOWED_ORIGINS` |
+| 비밀 값 | Parameter Store `/kgb-prod/backend/*` (SecureString) | 7  | `DB_PASSWORD`, `KAKAO_CLIENT_SECRET`            |
 
-Backend Service의 Desired Count가 2이므로, 배포 중 최소 2개의 정상 Task 유지를 목표로 한다.
+- Terraform은 Parameter Store를 `CHANGE_ME`로 만들고(`ignore_changes = [value]`), 실제 값은 콘솔에서 직접 입력한다. state와 git에 비밀 값이 남지
+  않는다.
+- 비밀 값은 Task Definition에 ARN만 들어가고, Task 시작 시점에 ECS가 값을 꺼내 주입한다. 값을 바꾸면 Task를 다시 시작해야 반영된다.
+- `DB_USERNAME`은 V1 앱 계정과 같은 `kgb`이다. RDS 계정은 SQL로 직접 생성([rds.md](rds.md) 7.4).
+- `TOUR_API_SCHEDULER_ENABLED`는 V1과 동시 실행을 막기 위해 `false`로 시작한다.
 
-단, ECS 배포 설정만으로 모든 순간의 ALB Healthy Target 2개가 보장되는 것은 아니다.
+### 5.3 Service
 
-실제 배포 시 ALB Target Health와 Task 상태를 함께 검증해야 한다.
+| 항목                         | 설정                         |
+|----------------------------|----------------------------|
+| 이름                         | `kgb-prod-backend`         |
+| Desired Count              | **0** (컷오버 시 2)            |
+| Minimum Healthy Percent    | 50                         |
+| Maximum Percent            | 100                        |
+| Deployment Circuit Breaker | Enabled, 자동 롤백             |
+| Load Balancer              | 없음 (ALB 단계에서 연결)           |
+| Tags                       | `propagate_tags = SERVICE` |
 
-### 5.2 배포 전 EC2 증설
+- 호스트 포트가 고정이라 같은 EC2에 새 Task를 함께 띄울 수 없다. ALB와 블루/그린 도입 전까지는 1개씩 교체(최소 50%, 최대 100%)한다.
+- 기본 Task 수는 0개다. 시험 기동할 때만 `-var backend_desired_count=2`로 올리고 끝나면 내린다. RDS `kgb` DB의 데이터는 DMS 테스트 마이그레이션 결과라, 실제 이전 전에 비우고 다시 옮긴다.
 
-평상시에는 EC2 2대에 Backend Task 2개를 배치한다.
+### 5.4 IAM
 
-새 버전 배포 시 기존 Task를 유지하면서 신규 Task를 실행할 수 있도록 배포 시작 전에 EC2를 1대 추가한다.
+| Role                           | 권한                                                                                              |
+|--------------------------------|-------------------------------------------------------------------------------------------------|
+| `kgb-prod-task-execution-role` | `AmazonECSTaskExecutionRolePolicy`, Secrets Manager `kgb-prod/*`, Parameter Store `/kgb-prod/*` |
+| `kgb-prod-task-role`           | S3 `kgb-s3-storage` 목록 조회, 객체 읽기·쓰기·삭제 (V1 `kgb-be-ec2-role`의 `s3access`와 같은 범위)                |
 
-```text
-평상시
-EC2 2대 / Backend Task 2개
-          │
-          ▼
-배포 파이프라인 시작
-          │
-          ▼
-ASG Desired Capacity: 2 → 3
-          │
-          ▼
-신규 EC2 생성
-          │
-          ▼
-ECS Cluster 등록 확인
-          │
-          ▼
-Task 배치 가능 리소스 확인
-          │
-          ▼
-ECS Service 업데이트
-```
+V1은 EC2 Role로 S3에 접근했지만, V2는 IMDS를 막아 두어 Task Role에 권한을 따로 부여했다.
 
-배포 파이프라인은 EC2가 생성되었다는 사실만으로 배포를 시작하지 않는다.
+## 6. 배포 전략 (검토 중)
 
-다음 항목을 확인한 후 배포를 진행한다.
+| 항목        | 현재              | 검토 중 (블루/그린)                            |
+|-----------|-----------------|-----------------------------------------|
+| 방식        | Rolling, 1개씩 교체 | 신규 Task 2개를 새 EC2 2대에 띄우고 ALB로 전환       |
+| EC2 수     | 2               | 배포 중 최대 4                               |
+| 필요 조건     | -               | ALB, Target Group 2개, 확인 시간(bake time)  |
+| EC2 증설·축소 | -               | Capacity Provider Managed Scaling 사용 검토 |
 
-- 신규 EC2가 ECS Cluster에 정상 등록되었는가?
-- ECS Container Instance가 ACTIVE 상태인가?
-- 신규 Backend Task를 실행할 CPU 및 메모리 여유가 있는가?
-- Task 실행에 필요한 네트워크 리소스가 확보되었는가?
+- `t3.small` 1대에 Backend Task가 1개만 들어가므로, 신규 Task를 띄우려면 EC2가 추가로 필요하다.
 
-### 5.3 배포 완료 검증
-
-배포 완료 후 다음 조건을 확인한다.
-
-1. 신규 버전 Backend Task 2개가 실행 중이다.
-2. ALB Healthy Target이 2개 이상이다.
-3. 이전 버전 Backend Task가 남아 있지 않다.
-4. Backend Task가 서로 다른 EC2 인스턴스에 배치되었다.
-5. 최종 Backend Task가 서로 다른 AZ에 분산되어 있다.
-
-### 5.4 배포 후 EC2 축소
-
-배포 완료 후 EC2를 3대에서 2대로 축소한다.
-
-단, ASG Desired Capacity만 단순히 3에서 2로 변경하지 않는다.
-
-종료 대상 EC2를 명시적으로 선정해야 한다.
-
-축소 절차는 다음과 같다.
-
-1. Backend Task가 실행되지 않는 EC2를 찾는다.
-2. 해당 EC2를 종료해도 AZ 분산이 유지되는지 확인한다.
-3. ECS Container Instance를 DRAINING 상태로 변경한다.
-4. 종료 대상 인스턴스를 지정하여 ASG에서 제거한다.
-5. ASG Desired Capacity가 2로 감소했는지 확인한다.
-6. Backend Task 2개와 ALB Healthy Target 2개가 유지되는지 확인한다.
-
-종료할 수 있는 EC2가 없다면 자동 축소를 중단한다.
-
-이 경우 EC2 3대를 일시적으로 유지하고 운영 알림을 발생시킨다.
-
-자동 Task 재배치를 통한 AZ 분산 복구는 초기 구현 범위에서 제외하며, 추후 검증 후 도입한다.
-
-## 6. 트래픽 기반 Auto Scaling
-
-### 6.1 초기 운영 정책
-
-초기에는 ECS Service의 Backend Task 수를 2개로 고정한다.
-
-```hcl
-desired_count = 2
-```
-
-트래픽 기반 ECS Service Auto Scaling은 초기 구현 범위에서 제외한다.
-
-그 이유는 현재 V2 환경에서 Backend 확장이 필요한 임계값이 측정되지 않았기 때문이다.
-
-### 6.2 추후 검증 항목
-
-V2 환경에서 부하 테스트를 수행하여 다음 지표를 측정한다.
-
-- ALB Request Count
-- ALB Target Response Time (p95)
-- Backend CPU 사용률
-- Backend 메모리 사용률
-- HikariCP Active Connections
-- HikariCP Pending Connections
-- RDS CPU 사용률
-- RDS 연결 수 및 쿼리 지연
-
-측정 결과를 바탕으로 다음 항목을 결정한다.
-
-- ECS Service Auto Scaling 도입 여부
-- Scale-out 임계값
-- Scale-in 임계값
-- 최소 및 최대 Backend Task 수
-- Scaling Cooldown
-- ASG 최대 인스턴스 수
-
-현재 ASG Max Size 3은 배포용 임시 용량을 고려한 값이다.
-
-추후 트래픽 기반 확장을 도입하면 배포용 여유 용량을 포함하여 ASG 상한을 재검토해야 한다.
-
-## 7. Terraform 구성
-
-Terraform AWS ECS 모듈 사용을 검토한다.
-
-- 모듈: `terraform-aws-modules/ecs/aws`
-- Cluster와 Service는 별도 서브모듈로 분리한다.
-- EC2 Launch Template과 ASG는 별도 `ecs-capacity` 모듈에서 관리한다.
-
-### 7.1 디렉터리 구조
+**고정 포트에서의 블루/그린**
 
 ```text
-terraform/
-├── main.tf
-├── variables.tf
-├── outputs.tf
-├── providers.tf
-│
-└── modules/
-    ├── vpc/
-    ├── security-group/
-    ├── iam/
-    │
-    ├── ecs-cluster/
-    │   ├── main.tf
-    │   ├── variables.tf
-    │   └── outputs.tf
-    │
-    ├── ecs-capacity/
-    │   ├── main.tf
-    │   ├── variables.tf
-    │   ├── outputs.tf
-    │   └── user_data.sh.tpl
-    │
-    └── ecs-service/
-        ├── main.tf
-        ├── variables.tf
-        └── outputs.tf
+1. EC2 2대 추가 (2 → 4)
+   EC2-A [Blue :8080]  EC2-C [Blue :8080]  EC2-B [비어 있음]  EC2-D [비어 있음]
+2. Green Task 2개 시작
+   A, C는 8080이 사용 중 → ECS가 비어 있는 B, D에 배치
+3. ALB가 Green Target Group(B, D)으로 트래픽 전환
+4. 확인 시간 동안 문제 없으면 Blue 종료, 문제 있으면 Blue로 복귀
+5. 빈 EC2 A, C 축소 (4 → 2)
 ```
 
-### 7.2 모듈별 책임
+- ECS는 Task를 배치할 때 필요한 호스트 포트가 비어 있는 EC2를 고른다. 고정 포트는 Green이 Blue와 같은 EC2에 배치되지 않도록 하는 역할을 한다.
+- 실제 제약은 포트가 아니라 메모리다. EC2당 가용 메모리 1913 MiB에 1536 MiB Task가 1개만 들어가므로, 동적 포트로 바꿔도 EC2 추가가 필요하다.
+- 따라서 고정 포트를 유지하고, 배포 중 EC2를 늘리고 줄이는 방법(Managed Scaling 또는 파이프라인)을 정하는 것이 핵심이다.
+- 현재 Service 설정(최소 50%, 최대 100%)은 Blue 1개를 내리고 Green 1개를 띄우는 Rolling 방식이라 EC2 추가 없이 동작하지만, 배포 중 Task가 1개로 줄어든다.
+- Managed Scaling 없이 ASG를 직접 4 → 2로 줄이면 ASG가 Task가 있는 EC2를 종료할 수 있다. Managed Termination Protection을 켜면 Task가 있는 EC2는 축소
+  대상에서 제외된다.
+- Managed Scaling의 축소는 EC2가 빈 뒤 약 15분 후에 일어난다. 롤백을 위한 확인 시간은 배포 설정의 bake time으로 보장해야 한다.
+- 블루와 그린이 같은 RDS를 쓰므로 DB 스키마 변경(Flyway)은 이전 버전과 호환되도록 나눠서 배포해야 한다.
+- ECS 자체 블루/그린 배포가 bridge + `instance` Target Group 조합을 지원하는지는 ALB 단계에서 확인한다.
 
-| 모듈           | 담당 리소스                                   |
-|--------------|------------------------------------------|
-| ecs-cluster  | ECS Cluster                              |
-| ecs-capacity | Launch Template, ASG, Capacity Provider  |
-| ecs-service  | Task Definition, ECS Service, 배치 및 배포 정책 |
+## 7. 트래픽 기반 Auto Scaling
 
-Capacity Provider의 Cluster 연결 위치는 모듈 간 의존성을 고려하여 결정한다.
+초기에는 Backend Task 수를 2개로 고정하고, ECS Service Auto Scaling은 도입하지 않는다. V2 환경에서 확장이 필요한 임계값을 아직 측정하지 않았기 때문이다.
 
-## 8. 단계별 구현 계획
+부하 테스트로 다음 지표를 측정한 뒤 도입 여부와 기준을 정한다.
 
-### 1단계: ECS Cluster
+- ALB Request Count, Target Response Time (p95)
+- Backend CPU·메모리 사용률
+- HikariCP Active / Pending Connections
+- RDS CPU 사용률, 연결 수, 쿼리 지연
 
-- ECS Cluster 생성
-- Container Insights 초기 비활성화
-- Terraform Plan 검증
-- Cluster 생성 확인
+트래픽 기반 확장을 도입하면 배포용 여유 용량을 포함해 ASG 상한(현재 4)을 재검토한다.
 
-### 2단계: ECS Capacity
+## 8. Terraform 구성
 
-- ECS Optimized AMI 조회
-- Launch Template 작성
-- ECS Instance Profile 연결
-- ASG 작성
-- Capacity Provider 연결
-- ECS Cluster 등록 검증
+커뮤니티 모듈(`terraform-aws-modules/ecs/aws`)을 검토했으나, 다른 모듈과 같이 리소스를 직접 작성했다. 커뮤니티 모듈을 써도 ASG와 Launch Template은 직접 작성해야 하고,
+Fargate 예시는 bridge 모드를 지원하지 않는다.
 
-### 3단계: Backend Service
+| 위치                  | 담당 리소스                                                                         |
+|---------------------|--------------------------------------------------------------------------------|
+| `modules/ecs`       | ECS Cluster, Launch Template, ASG, Capacity Provider                           |
+| `modules/backend`   | Secrets Manager(GHCR), Parameter Store 7개, Log Group, Task Definition, Service |
+| `prod/backend.tf`   | Backend 일반 환경 변수 (`locals`)                                                    |
+| `prod/variables.tf` | 인스턴스 타입, ASG 대수, 이미지, 메모리, Task 수, DB 계정 이름                                    |
 
-- Task Definition 작성
-- ECS Service 생성
-- ALB Target Group 연결
-- Placement Constraint 및 Strategy 설정
-- Backend Task 2개 실행 검증
+## 9. 구현 단계
 
-### 4단계: 배포 자동화
+| 단계 | 내용                                      | 상태            |
+|----|-----------------------------------------|---------------|
+| 1  | ECS Cluster                             | 완료            |
+| 2  | Launch Template, ASG, Capacity Provider | 완료 (2대 등록 확인) |
+| 3  | Backend Task Definition, Service        | 완료 (Task 0개)  |
+| 4  | ALB, Target Group, Service 연결           | 예정            |
+| 5  | 모니터링 Daemon (cAdvisor, node-exporter)   | 예정            |
+| 6  | 배포 방식 (블루/그린, CD)                       | 검토 중          |
+| 7  | 성능 검증, Auto Scaling                     | 예정            |
 
-- 배포 전 ASG 증설
-- ECS 신규 버전 배포
-- Healthy Target 검증
-- 배포 후 안전한 EC2 축소
-- 배포 실패 시 롤백 검증
+## 10. 검증
 
-### 5단계: 성능 검증
+### 10.1 확인한 것
 
-- V2 부하 테스트
-- 병목 구간 확인
-- Auto Scaling 필요성 검토
-- 확장 및 축소 기준 결정
+| 항목                        | 결과                                      |
+|---------------------------|-----------------------------------------|
+| EC2 2대 Cluster 등록         | 완료, `ACTIVE`, Agent 연결                  |
+| AZ 분산                     | 2a 1대, 2c 1대                            |
+| private-app → NAT → 외부 통신 | 양쪽 AZ 정상 (ECS API, SSM, 이미지 다운로드)       |
+| SSM 접속                    | 두 EC2 모두 `Online`                       |
+| 컨테이너의 IMDS 접근 차단          | bridge 컨테이너에서 토큰 요청 시 시간 초과 (`exit=28`) |
+| Task에 할당 가능한 자원           | EC2당 CPU 2048, 메모리 1913 MiB             |
+| 공통 태그                     | EC2 교체 후 `Project = KGB-V2` 확인          |
+| `terraform plan`          | `No changes`                            |
 
-## 9. 미검증 항목
+### 10.2 미검증
 
-| 항목                        | 상태  | 검증 방법                       |
-|---------------------------|-----|-----------------------------|
-| ECS Cluster 생성            | 예정  | Terraform Apply 및 AWS 콘솔 확인 |
-| t3.small 메모리 여유           | 미검증 | 실제 Task 실행 후 메모리 측정         |
-| EC2당 Backend Task 1개 배치   | 미검증 | ECS Placement 결과 확인         |
-| AZ별 Backend Task 분산       | 미검증 | Task 배치 AZ 확인               |
-| 배포 중 Healthy Target 2개 유지 | 미검증 | 실제 Rolling Deployment 테스트   |
-| 배포 전 EC2 증설 자동화           | 미구현 | 파이프라인 테스트                   |
-| 배포 후 안전한 EC2 축소           | 미구현 | 종료 대상 선정 및 장애 테스트           |
-| 트래픽 기반 확장 임계값             | 미측정 | V2 부하 테스트                   |
+| 항목                                         | 검증 시점              |
+|--------------------------------------------|--------------------|
+| Backend Task 기동 (이미지 다운로드, 비밀 값 주입, DB 연결) | 빈 DB로 시험 기동 또는 컷오버 |
+| Backend 메모리 사용량, JVM 힙                     | Task 실행 후          |
+| AZ별 Backend Task 분산                        | Task 실행 후          |
+| ALB 헬스 체크(8081)                            | ALB 구축 후           |
+| 배포 중 Healthy Target 유지                     | 배포 방식 구현 후         |
+| 트래픽 기반 확장 임계값                              | 부하 테스트             |
 
-## 10. 설계 결정 요약
+## 11. 컷오버 시 주의
 
-| 결정 항목                    | 현재 결정              |
-|--------------------------|--------------------|
-| ECS 실행 환경                | EC2                |
-| 초기 Backend Task 수        | 2                  |
-| 초기 EC2 수                 | 2                  |
-| 배포 시 최대 EC2 수            | 3                  |
-| 배포 방식                    | Rolling Deployment |
-| 배포 중 최소 정상 Task 목표       | 2                  |
-| 배포 전 EC2 증설              | 배포 파이프라인에서 수행      |
-| 배포 후 EC2 축소              | 안전성 검증 후 수행        |
-| ECS Service Auto Scaling | 추후 도입 여부 결정        |
-| Auto Scaling 임계값         | V2 부하 테스트 후 결정     |
+- Backend Task를 띄우면 사용자 요청이 없어도 스케줄 작업이 RDS에 쓴다.
+    - Tour API 동기화: `TOUR_API_SCHEDULER_ENABLED`로 제어 (현재 `false`)
+    - 월 무료 생성권 보충: **매월 1일 00:00**, 끄는 설정 없음
+    - SSE 하트비트: 15초마다, DB 쓰기 없음
+- 시험 기동으로 Task를 띄웠다면 **매월 1일 00:00 전에 반드시 0개로 내린다.** V1과 V2가 함께 생성권을 충전해 RDS에 기록이 중복된다.
+- 스케줄러 중복 실행 방지(락)는 같은 DB 안에서만 동작한다. V1과 V2는 DB가 달라 서로의 락을 볼 수 없으므로, 전환 시 V1 스케줄러를 먼저 끄고 V2를 켠다.
 
----
+## 12. 설계 결정 요약
 
-**설계 상태: REVISION REQUIRED**
-
-전체 아키텍처 방향은 정의되었으나, 배포 전 증설과 배포 후 축소의 자동화 방식 및 실제 무중단 배포 동작은 검증되지 않았다.
-
-따라서 초기에는 ECS Cluster부터 구현하고, EC2 용량 관리와 배포 자동화는 단계적으로 검증한다.
+| 결정 항목                    | 현재 결정                                     |
+|--------------------------|-------------------------------------------|
+| ECS 실행 환경                | EC2 (t3.small)                            |
+| 네트워크 모드                  | bridge, 호스트 포트 고정                         |
+| Backend 포트               | API 8080, 관리 8081                         |
+| Backend Task 수           | 운영 2, 컷오버 전 0                             |
+| EC2 수                    | 평상시 2, 배포 시 최대 4                          |
+| AMI                      | SSM 파라미터로 최신 권장 AMI 자동 조회                 |
+| 비밀 값                     | Parameter Store, GHCR 인증만 Secrets Manager |
+| 배포 방식                    | 현재 Rolling(1개씩), 블루/그린 검토 중               |
+| ECS Service Auto Scaling | 부하 테스트 후 결정                               |

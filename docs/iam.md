@@ -2,7 +2,7 @@
 
 ## 1. 개요
 
-KGB V2는 AWS IAM(Identity and Access Management)을 사용하여 EC2, ECS Task, GitHub Actions에 필요한 권한을 관리한다.
+AWS IAM(Identity and Access Management)을 사용하여 EC2, ECS Task, GitHub Actions에 필요한 권한을 관리한다.
 
 IAM 설계 목적
 
@@ -68,17 +68,19 @@ ECS Task는 EC2 Instance Profile이 아니라 ECS Task Definition에 지정한 �
 
 ## 3. IAM 구성
 
-현재 작성한 Terraform 코드에는 다음 역할이 포함되어 있다.
+2026-10-16 기준으로 다음 역할이 배포되어 있다.
 
-| IAM Role                | 사용 주체            | 주요 목적                                     |
-|-------------------------|------------------|-------------------------------------------|
-| ECS Instance Role       | ECS Host EC2     | ECS 클러스터 등록 및 ECS Agent 동작                |
-| ECS Task Execution Role | ECS 실행 환경        | GHCR 인증 정보 조회 및 컨테이너 실행 지원                |
-| ECS Task Role           | Spring Boot 컨테이너 | 애플리케이션의 AWS API 접근                        |
-| Monitoring Role         | Monitoring EC2   | 모니터링 대상 탐색을 위한 AWS API 조회                 |
-| GitHub Deploy Role      | GitHub Actions   | ECS Task Definition 등록 및 ECS Service 업데이트 |
+| IAM Role                        | 사용 주체            | 주요 목적                                     |
+|---------------------------------|------------------|-------------------------------------------|
+| `kgb-prod-ecs-instance-role`    | ECS Host EC2     | ECS 클러스터 등록, ECS Agent 동작, SSM 접속         |
+| `kgb-prod-task-execution-role`  | ECS 실행 환경        | GHCR 인증 정보·비밀 값 조회, 로그 전송                 |
+| `kgb-prod-task-role`            | Spring Boot 컨테이너 | S3 `kgb-s3-storage` 파일 저장                 |
+| `kgb-prod-monitoring-role`      | Monitoring EC2   | 모니터링 대상 탐색, SSM 접속 (EC2는 아직 없음)           |
+| `kgb-prod-nat-role`             | NAT Instance     | SSM 접속 (포트 포워딩 중계)                        |
+| `kgb-prod-backend-deploy-role`  | GitHub Actions   | ECS Task Definition 등록 및 ECS Service 업데이트 |
+| `kgb-prod-frontend-deploy-role` | GitHub Actions   | S3 업로드, CloudFront 캐시 무효화                 |
 
-추가로 프론트엔드 CD의 OIDC 전환을 위해 **Frontend Deploy Role을 별도로 구성할 예정**이다.
+개발자용 SSM 포트 포워딩 정책(`kgb-prod-developer-port-forward-policy`)도 함께 관리한다(6장).
 
 ### 3.1 ECS Instance Role
 
@@ -95,14 +97,17 @@ ec2.amazonaws.com
 AWS 관리형 정책을 사용한다.
 
 ```text
-AmazonEC2ContainerServiceforEC2Role
+AmazonEC2ContainerServiceforEC2Role   # ECS 등록, Agent 동작
+AmazonSSMManagedInstanceCore          # SSM Session Manager
 ```
 
 **Instance Profile**
 
 ```text
-kgb-ecs-instance-profile
+kgb-prod-ecs-instance-profile
 ```
+
+Launch Template의 IMDS hop limit을 1로 설정해, bridge 모드 컨테이너는 이 Role의 자격 증명을 가져갈 수 없다. 컨테이너의 AWS 권한은 Task Role로만 부여한다.
 
 ECS Host EC2의 Launch Template에 해당 Instance Profile을 연결한다.
 
@@ -122,14 +127,15 @@ ecs-tasks.amazonaws.com
 
 **Permission Policy**
 
-| 권한                                 | 목적                                       |
-|------------------------------------|------------------------------------------|
-| `secretsmanager:GetSecretValue`    | GHCR 인증 정보 조회                            |
-| `AmazonECSTaskExecutionRolePolicy` | ECS 실행 및 CloudWatch Logs 전송 등에 필요한 기본 권한 |
+| 권한                                 | 대상                     | 목적                                       |
+|------------------------------------|------------------------|------------------------------------------|
+| `AmazonECSTaskExecutionRolePolicy` | -                      | ECS 실행 및 CloudWatch Logs 전송 등에 필요한 기본 권한 |
+| `secretsmanager:GetSecretValue`    | `secret:kgb-prod/*`    | GHCR 인증 정보(`kgb-prod/ghcr`) 조회           |
+| `ssm:GetParameters`                | `parameter/kgb-prod/*` | Backend 비밀 환경 변수 7개 조회                   |
 
-**주의:** 현재 작성한 코드에는 `AmazonECSTaskExecutionRolePolicy` 연결이 누락되어 있어 추가가 필요하다.
-
-GHCR 인증 정보는 ECS Task Definition의 `repositoryCredentials`를 통해 참조할 예정이다.
+- GHCR 인증 정보는 Task Definition의 `repositoryCredentials`로 참조한다. ECS 비공개 레지스트리 인증은 Secrets Manager만 지원한다.
+- Backend 비밀 값(`DB_PASSWORD`, 카카오 키 등)은 Parameter Store SecureString에 두고 Task Definition의 `secrets`로 주입한다. 기본 KMS 키(
+  `aws/ssm`)로 암호화된다.
 
 ### 3.3 ECS Task Role
 
@@ -141,9 +147,19 @@ GHCR 인증 정보는 ECS Task Definition의 `repositoryCredentials`를 통해 �
 ecs-tasks.amazonaws.com
 ```
 
-현재는 Spring Boot가 직접 호출해야 하는 AWS API가 확정되지 않았으므로 별도의 Permission Policy를 부여하지 않는다.
+**Permission Policy** (`kgb-prod-task-policy`)
 
-향후 S3, SQS 등 AWS 서비스에 직접 접근해야 하는 요구사항이 발생하면 필요한 권한만 추가한다.
+| 권한                                                | 대상                 |
+|---------------------------------------------------|--------------------|
+| `s3:ListBucket`                                   | `kgb-s3-storage`   |
+| `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` | `kgb-s3-storage/*` |
+
+V1 Backend는 EC2 Role(`kgb-be-ec2-role`)의 `s3access` 정책으로 같은 버킷에 접근했다. V2는 컨테이너가 EC2 Role을 쓸 수 없으므로 같은 범위의 권한을 Task Role에
+부여했다.
+
+V1과 V2가 같은 버킷을 쓰므로, 컷오버 전 V2 Backend가 버킷의 파일을 쓰거나 지우지 않도록 주의한다.
+
+다른 AWS 서비스에 직접 접근해야 하는 요구사항이 생기면 필요한 권한만 추가한다.
 
 **Task Execution Role과 Task Role의 차이**
 
@@ -177,8 +193,10 @@ ecs:ListTasks
 **Instance Profile**
 
 ```text
-kgb-monitoring-profile
+kgb-prod-monitoring-profile
 ```
+
+`AmazonSSMManagedInstanceCore`도 연결되어 있다. Monitoring EC2는 아직 만들지 않았다.
 
 **미확정 사항**
 
@@ -283,7 +301,8 @@ GHCR에 이미지를 업로드하는 권한과 AWS ECS에 배포하는 IAM 권�
 
 ## 5. Frontend Deploy Role
 
-현재 Frontend CD의 AWS Access Key 방식을 GitHub OIDC 방식으로 전환할 예정
+Frontend CD를 AWS Access Key 방식에서 GitHub OIDC 방식으로 전환하기 위한 역할이다. Role(`kgb-prod-frontend-deploy-role`)은 배포되어 있으며, 실제 CD
+워크플로 전환 여부는 확인하지 않았다.
 
 ### 5.1 배포 흐름
 
@@ -359,25 +378,25 @@ SSH 키를 관리하거나 22번 포트를 열 필요가 없고, 접속 기록�
 
 다음 Role에 AWS 관리형 정책 `AmazonSSMManagedInstanceCore`를 연결한다.
 
-| IAM Role                       | Instance Profile                 | 대상             |
-|--------------------------------|----------------------------------|----------------|
-| `kgb-prod-ecs-instance-role`   | `kgb-prod-ecs-instance-profile`  | ECS Host EC2   |
-| `kgb-prod-monitoring-role`     | `kgb-prod-monitoring-profile`    | Monitoring EC2 |
-| `kgb-prod-nat-role`            | `kgb-prod-nat-profile`           | NAT Instance   |
+| IAM Role                     | Instance Profile                | 대상             |
+|------------------------------|---------------------------------|----------------|
+| `kgb-prod-ecs-instance-role` | `kgb-prod-ecs-instance-profile` | ECS Host EC2   |
+| `kgb-prod-monitoring-role`   | `kgb-prod-monitoring-profile`   | Monitoring EC2 |
+| `kgb-prod-nat-role`          | `kgb-prod-nat-profile`          | NAT Instance   |
 
 SSM Agent는 SSM 엔드포인트와 HTTPS(443)로 통신한다. 각 Security Group은 아웃바운드 443을 허용한다.
 
-NAT Instance 2대는 SSM에 `Online`으로 등록된 것을 확인했다. ECS Host와 Monitoring EC2는 아직 만들지 않았다.
+NAT Instance 2대와 ECS Host 2대는 SSM에 `Online`으로 등록된 것을 확인했다. Monitoring EC2는 아직 만들지 않았다.
 
 ### 6.2 개발자 포트 포워딩 정책
 
 개발자가 RDS를 조회할 수 있도록 `kgb-prod-developer-port-forward-policy`를 만든다.
 
-| 허용 범위        | 내용                                               |
-|--------------|--------------------------------------------------|
-| 세션 대상        | NAT Instance만                                    |
-| SSM Document | `AWS-StartPortForwardingSessionToRemoteHost`만    |
-| 세션 관리        | 본인이 시작한 세션만 종료·재개 가능                             |
+| 허용 범위        | 내용                                            |
+|--------------|-----------------------------------------------|
+| 세션 대상        | NAT Instance만                                 |
+| SSM Document | `AWS-StartPortForwardingSessionToRemoteHost`만 |
+| 세션 관리        | 본인이 시작한 세션만 종료·재개 가능                          |
 
 `ssm:SessionDocumentAccessCheck` 조건으로 지정한 Document 외의 세션은 이 정책으로 허용하지 않는다.
 
@@ -403,28 +422,16 @@ aws ssm start-session \
 IAM은 Security Group과 책임이 다르므로 별도 모듈로 관리한다.
 
 ```text
-terraform/
-├── modules/
-│   ├── network/
-│   ├── security/
-│   └── iam/
-│       ├── main.tf
-│       ├── ecs.tf
-│       ├── github.tf
-│       ├── monitoring.tf
-│       ├── variables.tf
-│       └── outputs.tf
-│
-└── envs/
-    └── prod/
-        └── main.tf
+modules/iam/
+├── main.tf        # 신뢰 정책, ECS Host / Task / Monitoring / NAT / GitHub 배포 Role, 개발자 정책
+├── variables.tf
+└── outputs.tf     # Instance Profile 이름, Role ARN 등 (ecs, nat, backend 모듈에서 사용)
 ```
 
-위 파일 구조는 권장안이며, 현재 코드가 실제로 이 파일들에 분리되어 있다는 의미는 아니다.
+모든 역할을 `main.tf` 한 파일에 `# ---------- 구분 ----------` 주석으로 나눠 작성했다. Terraform은 같은 디렉터리의 `.tf` 파일을 하나의 모듈로 처리하므로, 파일이 길어지면
+역할별로 나눠도 동작은 같다.
 
-Terraform은 같은 모듈 디렉터리의 `.tf` 파일들을 하나의 모듈로 처리한다.
-
-따라서 역할별로 파일을 분리하더라도 별도 Terraform 모듈을 생성할 필요는 없다.
+GitHub OIDC Provider는 계정에 이미 있어서 `data` 소스로 읽기만 한다.
 
 ---
 
@@ -444,6 +451,7 @@ Terraform은 같은 모듈 디렉터리의 `.tf` 파일들을 하나의 모듈�
 - ECS Task Execution Role
 - ECS Task Role
 - Monitoring Role
+- NAT Role
 - Backend Deploy Role
 - Frontend Deploy Role
 
@@ -463,30 +471,33 @@ ECS Task Trust Policy는 동일 계정 조건을 사용하며, 필요시 `aws:So
 
 ## 9. 검증 계획
 
-| 검증 대상               | 검증 방법                                  | 성공 기준                            |
-|---------------------|----------------------------------------|----------------------------------|
-| Terraform IAM       | `terraform validate`, `terraform plan` | 문법 오류 및 의도하지 않은 권한 변경 없음         |
-| ECS Instance Role   | ECS Host 클러스터 등록 확인                    | EC2가 ECS Container Instance로 등록됨 |
-| Task Execution Role | 비공개 GHCR 이미지로 Task 실행                  | 이미지 인증 및 다운로드 성공                 |
-| CloudWatch Logs     | Backend Task 실행 후 로그 확인                | 지정된 로그 그룹에 로그 기록                 |
-| Backend OIDC        | GitHub Actions 배포 실행                   | 허용된 워크플로에서 ECS 배포 성공             |
-| Frontend OIDC       | GitHub Actions 배포 실행                   | S3 업로드 및 CloudFront 무효화 성공       |
-| OIDC 접근 제한          | 허용되지 않은 브랜치에서 역할 사용 시도                 | 역할 수임 거부                         |
-| 기존 Access Key 제거    | 키 사용처 확인 및 비활성화                        | 기존 배포 파이프라인 정상 동작                |
+| 검증 대상               | 검증 방법                                  | 성공 기준                            | 결과                           |
+|---------------------|----------------------------------------|----------------------------------|------------------------------|
+| Terraform IAM       | `terraform validate`, `terraform plan` | 문법 오류 및 의도하지 않은 권한 변경 없음         | 완료                           |
+| ECS Instance Role   | ECS Host 클러스터 등록 확인                    | EC2가 ECS Container Instance로 등록됨 | **완료** (2대 등록, SSM `Online`) |
+| 컨테이너의 EC2 Role 차단   | bridge 컨테이너에서 IMDS 토큰 요청               | 요청 실패                            | **완료** (시간 초과)               |
+| Task Execution Role | 비공개 GHCR 이미지로 Task 실행                  | 이미지 인증, 비밀 값 주입 성공               | 미검증 (Task 0개)                |
+| Task Role (S3)      | Backend에서 S3 업로드                       | `kgb-s3-storage` 쓰기 성공           | 미검증                          |
+| CloudWatch Logs     | Backend Task 실행 후 로그 확인                | `/kgb-prod/backend`에 로그 기록       | 미검증                          |
+| Backend OIDC        | GitHub Actions 배포 실행                   | 허용된 워크플로에서 ECS 배포 성공             | 미검증                          |
+| Frontend OIDC       | GitHub Actions 배포 실행                   | S3 업로드 및 CloudFront 무효화 성공       | 미확인                          |
+| OIDC 접근 제한          | 허용되지 않은 브랜치에서 역할 사용 시도                 | 역할 수임 거부                         | 미검증                          |
+| 기존 Access Key 제거    | 키 사용처 확인 및 비활성화                        | 기존 배포 파이프라인 정상 동작                | 미확인                          |
 
 ---
 
 ## 10. 현재 설계 상태
 
-**판정: REVISION REQUIRED**
+2026-10-16 기준. 모든 역할이 배포되어 있으며, ECS Host 쪽은 실제 동작까지 확인했다. Backend Task와 GitHub 배포 쪽은 Task를 띄우거나 CD를 실행해야 검증할 수 있다.
 
-IAM의 역할 분리 방향은 타당하지만, 실제 적용 전에 다음 항목을 수정하거나 확인해야 한다.
-
-| 우선순위 | 항목                                      | 상태    |
-|------|-----------------------------------------|-------|
-| P0   | ECS Task Execution Role 기본 관리형 정책 연결    | 수정 필요 |
-| P0   | GitHub OIDC Trust Policy의 저장소·브랜치 제한 확인 | 검증 필요 |
-| P0   | GitHub Deploy Role의 ECS 리소스 ARN 확인      | 검증 필요 |
-| P1   | Frontend Deploy Role 추가                 | 구현 예정 |
-| P1   | Prometheus 서비스 디스커버리 방식 확정              | 미확정   |
-| P2   | SSM 전환에 필요한 IAM 권한                      | 향후 작업 |
+| 우선순위 | 항목                                         | 상태                                                                   |
+|------|--------------------------------------------|----------------------------------------------------------------------|
+| P0   | ECS Task Execution Role 기본 관리형 정책 연결       | 완료                                                                   |
+| P0   | Task Execution Role의 Parameter Store 읽기 권한 | 완료                                                                   |
+| P0   | Task Role의 S3 권한                           | 완료 (동작 미검증)                                                          |
+| P0   | GitHub Deploy Role의 ECS 리소스 ARN            | 코드 확인 완료 (`service/kgb-prod-*/*`가 `kgb-prod-cluster`와 일치), 실제 배포 미검증 |
+| P0   | GitHub OIDC Trust Policy의 저장소·브랜치 제한 확인    | 검증 필요                                                                |
+| P1   | Frontend Deploy Role                       | 배포 완료, CD 전환 미확인                                                     |
+| P1   | SSM 접근 (ECS Host, Monitoring, NAT)         | 완료                                                                   |
+| P1   | 개발자 포트 포워딩 정책 사용자·그룹 연결                    | 미연결                                                                  |
+| P1   | Prometheus 서비스 디스커버리 방식 확정                 | 미확정                                                                  |
