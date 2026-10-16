@@ -3,6 +3,9 @@ data "aws_ssm_parameter" "ecs_ami" {
   name = var.ami_ssm_parameter_name
 }
 
+# provider default_tags (ASG가 만드는 인스턴스와 볼륨에는 자동으로 붙지 않아서 직접 지정)
+data "aws_default_tags" "current" {}
+
 # ECS Cluster
 resource "aws_ecs_cluster" "main" {
   name = "${var.name}-cluster"
@@ -61,17 +64,17 @@ resource "aws_launch_template" "ecs" {
   tag_specifications {
     resource_type = "instance"
 
-    tags = {
+    tags = merge(data.aws_default_tags.current.tags, {
       Name = "${var.name}-ecs-host"
-    }
+    })
   }
 
   tag_specifications {
     resource_type = "volume"
 
-    tags = {
+    tags = merge(data.aws_default_tags.current.tags, {
       Name = "${var.name}-ecs-host"
-    }
+    })
   }
 
   tags = {

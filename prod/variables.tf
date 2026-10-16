@@ -42,6 +42,12 @@ variable "app_port" {
   default     = 8080
 }
 
+variable "management_port" {
+  description = "Backend 관리 포트 (Actuator health, prometheus)"
+  type        = number
+  default     = 8081
+}
+
 variable "github_backend_subjects" {
   description = "백엔드  GitHub Actions OIDC Subject"
   type        = list(string)
@@ -154,4 +160,36 @@ variable "ecs_desired_capacity" {
   description = "ECS Host 초기 인스턴스 수"
   type        = number
   default     = 2
+}
+
+# V1에서 검증된 이미지로 시작, 이후 변경은 배포 파이프라인 담당 예정
+variable "backend_image" {
+  description = "Backend 컨테이너 이미지"
+  type        = string
+  default     = "ghcr.io/100-hours-a-week/ktb4-10-be:6b98f8f-20261013"
+}
+
+variable "backend_desired_count" {
+  description = "실행할 Backend Task 수"
+  type        = number
+  default     = 0
+}
+
+variable "backend_memory" {
+  # V1 실사용 약 514 MiB, 남는 메모리는 모니터링 Daemon(cAdvisor, node-exporter)용
+  description = "Backend 컨테이너 메모리 상한 (MiB, t3.small 가용 1913 이내)"
+  type        = number
+  default     = 1536
+}
+
+variable "backend_db_username" {
+  description = "Backend가 사용할 RDS 계정 이름"
+  type        = string
+  default     = "kgb"
+}
+
+variable "backend_storage_bucket_name" {
+  description = "Backend 파일 저장용 S3 버킷 이름"
+  type        = string
+  default     = "kgb-s3-storage"
 }
