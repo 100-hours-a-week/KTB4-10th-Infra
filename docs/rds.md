@@ -14,17 +14,15 @@ RDS 설계 목적
 
 ## 2. 구성 요약
 
-| 항목        | 값                               |
-|-----------|---------------------------------|
-| 식별자       | `kgb-prod-db`                   |
-| DB 엔진     | MySQL 8.4.11                    |
-| 인스턴스 사양   | `db.t3.small` (2 vCPU, 2GiB)    |
-| 스토리지      | gp3 20GiB, 자동 확장 상한 50GiB, 암호화  |
-| 배포 방식     | Multi-AZ (운영 1대 + 대기 1대)        |
-| 네트워크      | private-db subnet 2개, 퍼블릭 접근 차단 |
-| 포트        | 3306                            |
-| 초기 데이터베이스 | `kgb`                           |
-| 마스터 계정    | `admin`                         |
+| 항목      | 값                               |
+|---------|---------------------------------|
+| 식별자     | `kgb-prod-db`                   |
+| DB 엔진   | MySQL 8.4.11                    |
+| 인스턴스 사양 | `db.t3.small` (2 vCPU, 2GiB)    |
+| 스토리지    | gp3 20GiB, 자동 확장 상한 50GiB, 암호화  |
+| 배포 방식   | Multi-AZ (운영 1대 + 대기 1대)        |
+| 네트워크    | private-db subnet 2개, 퍼블릭 접근 차단 |
+| 포트      | 3306                            |
 
 ## 3. 아키텍처
 
@@ -95,7 +93,6 @@ V1 MySQL에서 직접 조회한 값과 V2 RDS 설정을 비교했다.
 | `sql_mode`               | 엄격 모드 6개             | 엄격 모드 6개             | Parameter Group에 지정 |
 | 데이터베이스 이름                | `kgb`                | `kgb`                | `db_name`으로 지정      |
 
-- DB의 time zone은 UTC로 유지한다. `Asia/Seoul`로 변경하면 V1에서 이전한 시간 데이터와 새 데이터가 9시간 어긋난다.
 - `lower_case_table_names`는 RDS 생성 후 변경할 수 없다.
 
 ## 6. 인스턴스 사양
@@ -137,14 +134,14 @@ V1 MySQL에서 직접 조회한 값과 V2 RDS 설정을 비교했다.
 
 ### 7.1 네트워크
 
-| 출발지             | 포트   | 용도                 |
-|-----------------|------|--------------------|
-| Backend Task SG | 3306 | 애플리케이션의 DB 접속      |
-| NAT SG          | 3306 | 개발자의 SSM 포트 포워딩 접속 |
+| 출발지         | 포트   | 용도                              | 관리        |
+|-------------|------|---------------------------------|-----------|
+| ECS Host SG | 3306 | Backend 컨테이너의 DB 접속 (bridge 모드) | Terraform |
+| NAT SG      | 3306 | 개발자의 SSM 포트 포워딩 접속              | Terraform |
 
 - RDS SG에는 아웃바운드 규칙이 없다.
-- private-db subnet의 Route Table에는 VPC 내부 경로만 있으며 외부로 나가는 경로가 없다.
 - Backend는 VPC 내부에서 RDS에 직접 접속하며 NAT를 거치지 않는다.
+- ECS가 bridge 모드라 Backend 컨테이너에는 ECS Host의 SG가 적용된다.
 
 ### 7.2 개발자 접속
 
@@ -160,11 +157,14 @@ aws ssm start-session --target <NAT 인스턴스 ID> \
 
 ### 7.3 계정
 
-| 계정      | 용도             | 비밀번호 관리                                 |
-|---------|----------------|-----------------------------------------|
-| `admin` | 초기 설정, 계정 생성   | `terraform.tfvars` (git 제외)             |
-| 애플리케이션용 | Backend의 DB 접속 | Secrets Manager `kgb-prod/` 접두사 (생성 예정) |
-| 개발자용    | 조회 및 확인        | 생성 예정                                   |
+| 계정      | 용도               | 생성 방법                | 권한                        | 비밀번호 관리                                           |
+|---------|------------------|----------------------|---------------------------|---------------------------------------------------|
+| `admin` | 관리, 계정 생성 (사람)   | Terraform (RDS 생성 시) | 마스터 (RDS 전체)              | `terraform.tfvars`의 `db_master_password` (git 제외) |
+| `kgb`   | Backend 앱의 DB 접속 | SQL로 직접 생성 (아래 7.4)  | `ALL PRIVILEGES ON kgb.*` | Parameter Store `/kgb-prod/backend/DB_PASSWORD`   |
+| 개발자용    | 조회 및 확인          | 생성 예정                | 읽기 전용 예정                  | 생성 예정                                             |
+
+- Backend는 Flyway로 스키마를 관리한다(`flyway_schema_history`). 시작 시 새 마이그레이션이 있으면 테이블을 만들거나 바꾸므로 `kgb` 계정에 테이블 변경 권한이 필요하다.
+- 사람은 `admin`, 앱은 `kgb`로 계정을 분리한다. V1의 `root` / `kgb` 구조와 동일
 
 마스터 비밀번호는 `password_wo`(write-only) 속성으로 전달한다.
 
@@ -174,6 +174,48 @@ aws ssm start-session --target <NAT 인스턴스 ID> \
 - 콘솔에서 비밀번호를 변경하면 Terraform은 이를 감지하지 못한다.
 
 Backend는 마스터 계정을 사용하지 않고 권한을 제한한 별도 계정을 사용한다.
+
+### 7.4 Backend 앱 계정 (`kgb`) 생성
+
+Terraform AWS provider는 RDS 인스턴스와 마스터 계정만 만들 수 있고, MySQL 내부 계정은 만들지 못한다. 그래서 `kgb` 계정은 `admin`으로 접속해 SQL로 직접 만든다.
+
+V1에서는 MySQL 도커 이미지가 `MYSQL_USER`, `MYSQL_PASSWORD` 환경 변수로 앱 계정을 자동 생성했다. RDS에는 이 기능이 없다.
+
+**1. 포트 포워딩 (터미널 1, 세션 유지)**
+
+```bash
+aws ssm start-session --target <NAT 인스턴스 ID> \
+  --document-name AWS-StartPortForwardingSessionToRemoteHost \
+  --parameters host=<RDS Endpoint>,portNumber=3306,localPortNumber=13306
+```
+
+**2. `admin`으로 접속 (터미널 2)**
+
+```bash
+MYSQL_HISTFILE=/dev/null mysql -h 127.0.0.1 -P 13306 -u admin -p
+```
+
+`MYSQL_HISTFILE=/dev/null`은 비밀번호가 포함된 SQL이 기록 파일에 남지 않게 한다.
+
+**3. 계정 생성**
+
+```sql
+CREATE
+USER 'kgb'@'%' IDENTIFIED BY '<Parameter Store DB_PASSWORD 값>';
+GRANT ALL PRIVILEGES ON kgb.* TO
+'kgb'@'%';
+SHOW
+GRANTS FOR 'kgb'@'%';
+```
+
+- 비밀번호는 Parameter Store `/kgb-prod/backend/DB_PASSWORD`의 값과 같아야 한다. 다르면 Backend가 `Access denied`로 기동에 실패한다.
+- 권한은 V1 `kgb` 계정과 같게 `kgb` 데이터베이스 전체로 시작한다. 다른 데이터베이스와 계정 관리 권한은 없다.
+
+**비밀번호 변경 시**
+
+1. `ALTER USER 'kgb'@'%' IDENTIFIED BY '<새 비밀번호>';`
+2. Parameter Store `DB_PASSWORD`를 같은 값으로 변경
+3. <mark> ECS Service를 재배포해 새 값으로 Task를 다시 시작 (환경 변수는 Task 시작 시점에만 주입됨) </mark>
 
 ## 8. 백업 및 유지보수
 
@@ -212,7 +254,7 @@ Backend는 마스터 계정을 사용하지 않고 권한을 제한한 별도 �
 |-------|-----------------|
 | 에러 로그 | CloudWatch Logs |
 
-- 로그 그룹은 RDS가 자동으로 생성하며 보관 기간은 무기한이다.
+- 로그 그룹(`/aws/rds/instance/kgb-prod-db/error`)은 RDS가 자동으로 생성했으며, Terraform으로 가져와(import) 보관 기간을 90일로 관리한다.
 - 슬로우 쿼리 로그는 현재 비활성화 상태이다. 필요 시 Parameter Group에 추가하며 재부팅은 필요하지 않다.
 
 ## 10. 설계 결정
@@ -249,8 +291,13 @@ Plan의 58개에는 아직 apply하지 않은 Security Group 27개, IAM 20개, N
 
 ## 12. 후속 작업
 
-- [ ] V1 → V2 데이터 이전 방식 결정 및 필요한 네트워크 경로 구성
-- [ ] 애플리케이션용 DB 계정 생성 및 Secrets Manager 등록
-- [ ] 개발자용 DB 계정 생성
+- [x] V1 → V2 데이터 이전 방식 결정 (AWS DMS Full Load + CDC) 및 네트워크 경로 구성 (피어링, Terraform 외부)
+- [ ] 테스트 마이그레이션(2026-10-15)에서 실패한 테이블의 DMS 설정 보완: `generation_jobs`(생성 컬럼), `itinerary_items`(JSON 컬럼), `tourism_contents`(GEOMETRY 컬럼) (2026-10-16
+  기준 0행)
+- [ ] 실제 이전 전 `kgb` DB 비우기 (테스트 데이터, V2 시험 기동 데이터 제거)
+- [ ] 마이그레이션 종료 후 V1 서버 임시 접근 규칙(`10.0.0.210/32`), DMS 관련 규칙 정리
+- [x] 애플리케이션용 DB 계정(`kgb`) 생성 방법 정리 및 비밀번호 Parameter Store 등록
+- [ ] `kgb` 계정 권한을 Backend 동작에 맞게 축소
+- [ ] 개발자용 읽기 전용 DB 계정 생성
 - [ ] CloudWatch 알람 구성
 - [ ] 메이저 버전 업그레이드에 대비한 Parameter Group 이름 변경 검토

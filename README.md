@@ -76,7 +76,7 @@ KGuideBook(KGB) V2 서비스의 AWS 인프라를 Terraform으로 관리하는 �
 - Private DB Subnet에는 인터넷으로 향하는 기본 경로를 설정하지 않았습니다.
 - ECS Backend와 RDS는 VPC 내부 네트워크를 통해 통신하며 NAT Instance를 경유하지 않습니다.
 
-> NAT Instance와 라우팅 구성은 완료했으며, Private App Subnet에서 실제 외부 통신이 가능한지는 추가 검증이 필요합니다.
+> Private App Subnet의 ECS Host가 NAT Instance를 거쳐 ECS 클러스터 등록, SSM 연결, 외부 이미지 다운로드에 성공하여 양쪽 AZ의 외부 통신을 확인했습니다.
 
 ### 운영 접근 방식
 
@@ -112,23 +112,27 @@ aws ssm start-session \
 
 세션 연결 후 로컬 DB 클라이언트에서 `127.0.0.1:13306`으로 접속할 수 있습니다.
 
-> NAT Instance는 NAT 기능이 아니라 SSM 포트 포워딩의 중계 서버 역할을 수행합니다. 중계 EC2가 중지되면 해당 경로를 통한 접속은 불가능합니다.
+> NAT Instance는 Private App Subnet의 외부 통신(NAT)과 SSM 포트 포워딩 중계를 함께 담당합니다. NAT Instance가 중지되면 해당 AZ의 외부 통신과 이 경로를 통한 RDS 접속이 모두 불가능합니다.
 
 ## 3. 구현 현황
 
 | 단계 | 모듈 | 구현 범위 | 상태 |
 | --- | --- | --- | --- |
 | 1 | `network` | VPC, Subnet 6개, IGW, Route Table | 배포 완료 |
-| 2 | `security` | Security Group 6개 (ALB, Backend Task, ECS Host, RDS, Monitoring, NAT) | 배포 완료 |
-| 3 | `iam` | ECS·Monitoring·NAT Role, GitHub Actions OIDC 배포 Role, 개발자 포트 포워딩 정책 | 배포 완료 |
-| 4 | `nat` | NAT Instance 2대, EIP, Private App 라우팅 | 배포 완료 / 통신 검증 필요 |
-| 5 | `rds` | RDS MySQL 8.4 Multi-AZ, DB Subnet Group, Parameter Group | 배포 완료 |
-| 6 | - | ALB, Target Group | 예정 |
-| 7 | - | ECS Cluster, EC2, ECS Service | 설계 중 |
-| 8 | - | S3, CloudFront | 예정 |
-| 9 | - | V1 → V2 데이터 마이그레이션 (AWS DMS Full Load + CDC) | 검토 중 |
+| 2 | `security` | Security Group 5개 (ALB, ECS Host, RDS, Monitoring, NAT) | 배포 완료 |
+| 3 | `iam` | ECS·Monitoring·NAT Role, Task Role(S3), GitHub Actions OIDC 배포 Role, 개발자 포트 포워딩 정책 | 배포 완료 |
+| 4 | `nat` | NAT Instance 2대, EIP, Private App 라우팅 | 배포 완료 / 통신 확인 |
+| 5 | `rds` | RDS MySQL 8.4 Multi-AZ, DB Subnet Group, Parameter Group, error 로그 그룹(90일) | 배포 완료 |
+| 6 | `ecs` | ECS Cluster, Launch Template, ASG(EC2 2대), Capacity Provider | 배포 완료 / 클러스터 등록 확인 |
+| 7 | `backend` | Task Definition, ECS Service, Log Group, 비밀 값 저장소(Secrets Manager, Parameter Store) | 배포 완료 / **Task 0개로 대기** (시험 기동만 진행) |
+| 8 | - | ACM 인증서(서울), ALB, Target Group | 예정 (컷오버 전 apply) |
+| 9 | - | 모니터링 EC2, cAdvisor·node-exporter Daemon Service | 예정 |
+| 10 | - | S3, CloudFront | V1 리소스 재사용 예정 |
+| 11 | - | V1 → V2 데이터 마이그레이션 (AWS DMS Full Load + CDC) | **테스트 마이그레이션 완료** (2026-10-15, Terraform 외부), 실제 이전 예정 |
 
 > 배포 완료는 AWS 리소스 생성이 완료된 상태를 의미하며, 장애 대응 및 운영 검증까지 완료했다는 의미는 아닙니다.
+>
+> Backend Task는 기본 0개로 두고(`backend_desired_count = 0`), 시험 기동할 때만 `-var backend_desired_count=2`로 올립니다. 매월 1일 00:00(생성권 보충) 전에는 반드시 0개로 내립니다.
 
 ## 4. 디렉터리 구조
 
@@ -139,8 +143,10 @@ aws ssm start-session \
 │   ├── security/    # Security Group 및 규칙
 │   ├── iam/         # IAM Role, Policy, OIDC
 │   ├── nat/         # NAT Instance, EIP, 라우팅
-│   └── rds/         # RDS MySQL, Subnet Group, Parameter Group
-├── prod/            # 운영 환경 루트 모듈
+│   ├── rds/         # RDS MySQL, Subnet Group, Parameter Group, 로그 그룹
+│   ├── ecs/         # ECS Cluster, Launch Template, ASG, Capacity Provider
+│   └── backend/     # Backend Task Definition, Service, Log Group, 비밀 값 저장소
+├── prod/            # 운영 환경 루트 모듈 (backend.tf: Backend 일반 환경 변수)
 ├── docs/            # 모듈별 설계 문서
 └── .github/         # PR 템플릿
 ```
@@ -159,7 +165,12 @@ aws ssm start-session \
 | DB 비밀번호 | `password_wo` (write-only) | Terraform State에 비밀번호 값이 저장되지 않도록 구성 |
 | DB 파라미터 | 사용자 정의 Parameter Group | V1과 `sql_mode`를 일치시켜 데이터 이전 후 동작 차이를 줄이기 위함 |
 | DB 보호 | 삭제 방지, 최종 스냅샷, 자동 백업 7일 | 의도하지 않은 삭제와 데이터 손실 위험 감소 |
-| AMI | NAT Instance AMI ID 고정 | 최신 AMI 변경으로 인한 의도하지 않은 인스턴스 교체 방지 |
+| AMI | NAT는 ID 고정, ECS Host는 SSM 파라미터로 최신 권장 AMI 자동 조회 | NAT는 AMI가 바뀌면 인스턴스가 교체되므로 고정. ECS Host는 Launch Template 새 버전만 생기고 기존 서버는 유지되므로 보안 패치를 위해 자동 조회 |
+| ECS 네트워크 | `bridge` 모드, 호스트 포트 고정 | V1과 같은 방식. EC2당 Backend Task 1개라 동적 포트의 이점이 없음 |
+| Backend 포트 | API 8080, 관리(Actuator) 8081 분리 | `/actuator/prometheus` 등 내부 정보를 외부에 노출하지 않음. 8081은 ALB 헬스 체크와 Monitoring만 허용 |
+| 비밀 값 | Parameter Store(SecureString), GHCR 인증만 Secrets Manager | Parameter Store 표준 파라미터는 무료. ECS 비공개 레지스트리 인증은 Secrets Manager만 지원 |
+| 컨테이너 IMDS | IMDSv2 필수, hop limit 1 | bridge 컨테이너가 ECS Host Role 자격 증명에 접근하지 못하도록 차단. 컨테이너 권한은 Task Role로만 부여 |
+| DB 계정 | 사람은 `admin`, 앱은 `kgb` | V1의 `root` / `kgb` 구조와 동일. 앱 계정은 `kgb` DB 권한만 보유 |
 
 ### RDS 구성
 
@@ -177,39 +188,41 @@ RDS Multi-AZ는 데이터베이스 인스턴스 장애 시 자동 장애 조치�
 
 장애 조치 과정에서 일시적인 연결 오류가 발생할 수 있으므로, 애플리케이션의 재연결 동작과 실제 복구 시간은 추가 검증할 예정입니다.
 
-### ECS 설계 방향
+### ECS 구성
 
-> ECS는 현재 설계 단계이며, 실제 구축 및 동작 검증은 진행 예정입니다.
+> ECS Cluster, EC2, Backend Service까지 구축했습니다. Backend Task는 컷오버 전까지 0개로 유지하며, ALB와 모니터링 Daemon은 아직 연결하지 않았습니다.
 
-| 항목 | 설계 방향 |
+| 항목 | 구성 |
 | --- | --- |
 | 실행 방식 | ECS on EC2 |
-| EC2 Instance Type | `t3.small` |
-| 운영 EC2 수 | 2대 |
+| EC2 Instance Type | `t3.small` (Task에 할당 가능한 메모리 1913 MiB) |
+| EC2 수 (ASG) | 최소 2 / 희망 2 / 최대 4 (블루/그린 배포 시 2대 추가) |
 | 가용 영역 | ap-northeast-2a, ap-northeast-2c |
+| AMI | ECS 최적화 Amazon Linux 2023 (SSM 파라미터로 자동 조회) |
 | Backend Service | REPLICA |
-| Desired Task Count | 2 |
+| Desired Task Count | 운영 2 (현재 0, 컷오버 시 2) |
+| Backend 메모리 상한 | 1536 MiB (V1 실사용 약 514 MiB) |
 | Placement Constraint | `distinctInstance` |
 | Placement Strategy | AZ Spread |
 | Network Mode | `bridge` |
-| Container Port | 8080 |
-| Host Port | 8080 |
+| Port Mapping | 8080:8080 (API), 8081:8081 (Actuator) |
 | ALB Target Type | `instance` |
-| 모니터링 | cAdvisor, node-exporter DAEMON Service |
+| 이미지 | GHCR 비공개 이미지 (`ktb4-10-be`), Secrets Manager의 PAT로 인증 |
+| 모니터링 | cAdvisor(8082), node-exporter(9100) DAEMON Service 예정 |
 
-Backend Task를 서로 다른 EC2에 배치하도록 설계했습니다.
-
-EC2당 Backend Task 하나를 실행하는 구조이므로 `bridge` 네트워크 모드와 고정 포트 매핑을 사용할 계획입니다.
+Backend Task를 서로 다른 EC2에 배치합니다. EC2당 Backend Task 하나를 실행하는 구조이므로 `bridge` 네트워크 모드와 고정 포트 매핑을 사용합니다.
 
 다만 AZ Spread는 배치 선호 전략이므로, 장애 상황에서도 AZ별 Task 하나가 항상 유지되는 것은 아닙니다.
 
-실제 구축 후 다음 항목을 검증할 예정입니다.
+다음 항목을 검증할 예정입니다.
 
 - Backend 및 모니터링 Task의 CPU·메모리 사용량
-- ALB와 Backend 간 요청 전달 및 헬스 체크
+- ALB와 Backend 간 요청 전달 및 헬스 체크 (`8081/actuator/health`)
 - EC2 장애 시 Task 재배치
 - AZ별 Task 분산 동작
 - 호스트 및 컨테이너 메트릭 수집
+
+자세한 내용은 [docs/ecs.md](docs/ecs.md), 개념 설명은 [docs/ecs-guide.md](docs/ecs-guide.md)를 참고합니다.
 
 ### 배포 전략 검토
 
@@ -243,7 +256,7 @@ EC2당 Backend Task 하나를 실행하는 구조이므로 `bridge` 네트워크
 
 ## 6. 데이터 이전 계획
 
-기존 V1 MySQL에서 V2 RDS MySQL로 데이터를 이전하기 위해 AWS DMS를 검토하고 있습니다.
+기존 V1 MySQL에서 V2 RDS MySQL로 AWS DMS(Full Load + CDC)를 사용해 데이터를 이전할 계획입니다. 2026-10-15에 마이그레이션 담당자가 **테스트 마이그레이션**을 진행했으며, DMS와 V1↔V2 VPC 피어링은 Terraform 외부에서 구성했습니다.
 
 ```text
 V1 MySQL
@@ -258,6 +271,26 @@ V2 RDS MySQL
 
 - **Full Load:** 기존 데이터를 V2 RDS로 초기 이전
 - **CDC:** 초기 이전 이후 발생하는 데이터 변경 사항을 지속적으로 반영
+
+### 테스트 마이그레이션 결과 (2026-10-16 확인)
+
+| 항목 | 상태 |
+| --- | --- |
+| DMS 태스크 | `kgb-v1-to-v2-full-load-cdc` (Full Load + CDC) |
+| Full Load | 20개 테이블 중 17개 완료 |
+| 실패 테이블 | `generation_jobs`(생성 컬럼), `itinerary_items`(JSON 컬럼), `tourism_contents`(GEOMETRY 컬럼), 0행 |
+| CDC 지연 | 약 4초 |
+| DB 계정 | V1 `dms_source`(소스), V2 `admin`(타깃 엔드포인트), V2 `dms_target` 생성됨 |
+
+- 실패한 3개 테이블은 실제 이전 전에 DMS 설정(생성 컬럼 제외, LOB 모드, 공간 타입 처리)을 보완해야 합니다.
+- 테스트 이후 RDS `kgb` DB에는 V2 Backend 시험 기동 데이터가 섞일 수 있으므로, 실제 이전 전에 비우고 다시 이전합니다.
+
+### 컷오버 시 함께 변경할 것
+
+- Backend Task 0 → 2 (`backend_desired_count`)
+- CloudFront `/api/*`, `/auth/v1/*` 동작의 오리진을 V1(`http-only`, 8080)에서 V2 ALB(`https-only`, 443)로 변경
+- Tour API 스케줄러: V1 끄기 → V2 켜기 (`TOUR_API_SCHEDULER_ENABLED`)
+- V2 Backend의 AI 서버(`kgb-ai`, V1 VPC) 접근 경로 구성
 
 ### 검증 예정 항목
 
@@ -398,13 +431,14 @@ Terraform State에서 관리 중인 리소스를 확인합니다.
 
 | 순서 | 작업 | 주요 검증 항목 |
 | --- | --- | --- |
-| 1 | NAT Instance 통신 검증 | Private App Subnet에서 외부 통신 확인 |
-| 2 | ECS 및 ALB 구축 | Backend Task 배치 및 요청 전달 |
-| 3 | 모니터링 구성 | 호스트 및 컨테이너 메트릭 수집 |
-| 4 | 배포 전략 구현 | 서비스 중단 최소화 및 롤백 |
-| 5 | 장애 대응 테스트 | EC2 장애, Task 재배치, 복구 시간 |
-| 6 | DMS 데이터 이전 | 데이터 정합성 및 CDC 지연 |
-| 7 | V2 서비스 전환 | 트래픽 전환 및 장애 대응 |
+| 1 | ACM 인증서, ALB | Backend 헬스 체크(8081) 및 요청 전달 |
+| 2 | 모니터링 구성 | 호스트 및 컨테이너 메트릭 수집 |
+| 3 | AI 서버 연결 | V2 Backend → `kgb-ai` 통신 |
+| 4 | Backend 시험 기동 | 별도 빈 DB로 이미지 다운로드, 비밀 값 주입, DB 연결 확인 |
+| 5 | 실제 데이터 이전 (테스트에서 실패한 테이블 보완) | 데이터 정합성 및 CDC 지연 |
+| 6 | 배포 전략 구현 | 서비스 중단 최소화 및 롤백 |
+| 7 | V2 서비스 전환 (컷오버) | 트래픽 전환 및 롤백 |
+| 8 | 장애 대응 테스트 | EC2 장애, Task 재배치, 복구 시간 |
 
 ## 10. 문서
 
@@ -412,7 +446,6 @@ Terraform State에서 관리 중인 리소스를 확인합니다.
 | --- | --- |
 | [docs/infra-status.md](docs/infra-status.md) | 인프라 구축 현황 |
 | [docs/iam.md](docs/iam.md) | IAM Role 및 정책 설계 |
-| [docs/rds.md](docs/rds.md) | RDS 설계, V1 비교, 접속 방법 |
-| [docs/ecs.md](docs/ecs.md) | ECS 설계 |
-
-> 문서 링크는 해당 파일이 저장소에 함께 커밋된 이후 정상적으로 동작합니다.
+| [docs/rds.md](docs/rds.md) | RDS 설계, V1 비교, 접속 방법, DB 계정 |
+| [docs/ecs.md](docs/ecs.md) | ECS 및 Backend Service 설계 |
+| [docs/ecs-guide.md](docs/ecs-guide.md) | ECS 구성 요소 개념 설명 |
