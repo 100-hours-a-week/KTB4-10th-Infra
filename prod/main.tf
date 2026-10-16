@@ -129,4 +129,23 @@ module "backend" {
 
   # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
   environment = local.backend_environment
+
+  target_group_arn = module.alb.target_group_arn
+}
+
+module "alb" {
+  source = "../modules/alb"
+  name   = var.name
+
+  vpc_id            = module.network.vpc_id
+  public_subnet_ids = module.network.public_subnet_ids
+  security_group_id = module.security.alb_security_group_id
+
+  app_port        = var.app_port
+  management_port = var.management_port
+
+  domain_name               = var.domain_name
+  subject_alternative_names = var.subject_alternative_names
+
+  test_allowed_cidrs = var.alb_test_allowed_cidrs
 }
