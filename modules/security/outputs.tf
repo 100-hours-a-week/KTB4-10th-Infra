@@ -22,3 +22,8 @@ output "nat_security_group_id" {
   description = "NAT instance security group ID"
   value       = aws_security_group.nat.id
 }
+
+output "ai_security_group_id" {
+  description = "AI host security group ID"
+  value       = aws_security_group.ai.id
+}

@@ -48,6 +48,12 @@ variable "management_port" {
   default     = 8081
 }
 
+variable "ai_port" {
+  description = "AI 서버 포트"
+  type        = number
+  default     = 8000
+}
+
 variable "github_backend_subjects" {
   description = "백엔드  GitHub Actions OIDC Subject"
   type        = list(string)
@@ -172,7 +178,7 @@ variable "backend_image" {
 variable "backend_desired_count" {
   description = "실행할 Backend Task 수"
   type        = number
-  default     = 0
+  default     = 2
 }
 
 variable "backend_memory" {
@@ -211,4 +217,39 @@ variable "alb_test_allowed_cidrs" {
   description = "테스트용 ALB 443 접근 허용 CIDR (예: [\"1.2.3.4/32\"])"
   type        = list(string)
   default     = []
+}
+
+# ---------- AI ----------
+
+variable "ai_image" {
+  description = "AI 컨테이너 이미지"
+  type        = string
+  default     = "ghcr.io/100-hours-a-week/ktb4-10-ai:ff49476-20261015"
+}
+
+# al2023-ami-ecs-hvm-2023.0.20261014-kernel-6.1-x86_64 (ap-northeast-2)
+# aws_instance는 AMI가 바뀌면 교체되므로 자동 조회하지 않고 고정
+variable "ai_ami_id" {
+  description = "AI 서버 AMI ID (ECS 최적화 Amazon Linux 2023, x86_64)"
+  type        = string
+  default     = "ami-08afa937d0ef1a748"
+}
+
+variable "ai_instance_type" {
+  description = "AI 서버 인스턴스 타입"
+  type        = string
+  default     = "t3.small"
+}
+
+# private-app-a(10.10.10.0/24) 뒤쪽 주소. ASG 서버와 겹치지 않게 사용 중인지 확인 후 지정
+variable "ai_private_ip" {
+  description = "AI 서버 사설 IP"
+  type        = string
+  default     = "10.10.10.250"
+}
+
+variable "ai_memory" {
+  description = "AI 컨테이너 메모리 상한 (MiB, V1 실측 최대 약 135 MiB)"
+  type        = number
+  default     = 1024
 }

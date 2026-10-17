@@ -23,6 +23,11 @@ variable "task_role_arn" {
   type        = string
 }
 
+variable "ghcr_secret_arn" {
+  description = "GHCR 인증 정보 Secrets Manager ARN (modules/registry)"
+  type        = string
+}
+
 variable "image" {
   description = "Backend 컨테이너 이미지 (GHCR)"
   type        = string

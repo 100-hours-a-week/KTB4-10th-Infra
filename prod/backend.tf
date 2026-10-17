@@ -10,9 +10,8 @@ locals {
     # S3
     S3_BUCKET_NAME = var.backend_storage_bucket_name
     AWS_REGION     = "ap-northeast-2"
-
-    # AI (V1 VPC의 kgb-ai 서버, V2에서는 피어링 전까지 접근 불가)
-    AI_SERVER_BASE_URL        = "http://10.0.0.214:8000"
+    # AI ( IP 고정)
+    AI_SERVER_BASE_URL        = module.ai.base_url
     AI_SERVER_CONNECT_TIMEOUT = "3s"
     AI_SERVER_READ_TIMEOUT    = "10s"
 

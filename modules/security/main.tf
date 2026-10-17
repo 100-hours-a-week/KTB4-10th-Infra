@@ -58,6 +58,17 @@ resource "aws_security_group" "nat" {
   }
 }
 
+# AI SG 
+resource "aws_security_group" "ai" {
+  name        = "${var.name}-ai-sg"
+  description = "AI host security group"
+  vpc_id      = var.vpc_id
+
+  tags = {
+    Name = "${var.name}-ai-sg"
+  }
+}
+
 # ---------- ALB ----------
 
 # CloudFront -> ALB
@@ -165,6 +176,41 @@ resource "aws_vpc_security_group_egress_rule" "ecs_host_to_rds" {
 resource "aws_vpc_security_group_egress_rule" "ecs_host_https" {
   security_group_id = aws_security_group.ecs_host.id
   description       = "Allow HTTPS for ECS agent and image pull"
+
+  ip_protocol = "tcp"
+  from_port   = 443
+  to_port     = 443
+  cidr_ipv4   = "0.0.0.0/0"
+}
+
+# ECS Host -> AI (Backend 컨테이너가 AI 호출)
+resource "aws_vpc_security_group_egress_rule" "ecs_host_to_ai" {
+  security_group_id = aws_security_group.ecs_host.id
+  description       = "Allow backend container to call AI server"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.ai_port
+  to_port                      = var.ai_port
+  referenced_security_group_id = aws_security_group.ai.id
+}
+
+# ---------- AI ----------
+
+# ECS Host -> AI (/metrics 포함 전체 경로라 Backend 외에는 열지 않음)
+resource "aws_vpc_security_group_ingress_rule" "ai_from_ecs_host" {
+  security_group_id = aws_security_group.ai.id
+  description       = "Allow AI port from backend container on ECS host"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.ai_port
+  to_port                      = var.ai_port
+  referenced_security_group_id = aws_security_group.ecs_host.id
+}
+
+# AI -> 외부 HTTPS (ECS 에이전트, 이미지 다운로드, SSM, 향후 RunPod)
+resource "aws_vpc_security_group_egress_rule" "ai_https" {
+  security_group_id = aws_security_group.ai.id
+  description       = "Allow HTTPS for ECS agent, image pull and external APIs"
 
   ip_protocol = "tcp"
   from_port   = 443
