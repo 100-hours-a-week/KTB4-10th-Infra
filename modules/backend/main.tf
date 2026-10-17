@@ -2,16 +2,6 @@ data "aws_region" "current" {}
 
 # ---------- 비밀 값 저장소 (값은 콘솔/CLI로 직접 입력) ----------
 
-# GHCR 비공개 이미지 인증 (repositoryCredentials는 Secrets Manager만 지원)
-resource "aws_secretsmanager_secret" "ghcr" {
-  name        = "${var.name}/ghcr"
-  description = "GHCR credentials for pulling the private backend image"
-
-  tags = {
-    Name = "${var.name}/ghcr"
-  }
-}
-
 # Backend 비밀 환경 변수 (Parameter Store SecureString)
 resource "aws_ssm_parameter" "secrets" {
   for_each = toset(var.secret_names)
@@ -69,7 +59,7 @@ resource "aws_ecs_task_definition" "backend" {
       memory = var.memory
 
       repositoryCredentials = {
-        credentialsParameter = aws_secretsmanager_secret.ghcr.arn
+        credentialsParameter = var.ghcr_secret_arn
       }
 
       # 호스트 포트 고정 (서버당 Task 1개)

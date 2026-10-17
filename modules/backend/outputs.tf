@@ -13,11 +13,6 @@ output "log_group_name" {
   value       = aws_cloudwatch_log_group.backend.name
 }
 
-output "ghcr_secret_name" {
-  description = "GHCR 인증 정보를 넣을 Secrets Manager 시크릿 이름"
-  value       = aws_secretsmanager_secret.ghcr.name
-}
-
 output "secret_parameter_names" {
   description = "비밀 값을 넣을 Parameter Store 이름 목록"
   value       = [for p in aws_ssm_parameter.secrets : p.name]

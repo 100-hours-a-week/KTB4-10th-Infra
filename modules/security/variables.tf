@@ -28,3 +28,8 @@ variable "private_app_subnet_cidrs" {
   description = "NAT를 사용하는 Backend Private subnet CIDR 블록 목록"
   type        = list(string)
 }
+
+variable "ai_port" {
+  description = "AI 서버 포트"
+  type        = number
+}

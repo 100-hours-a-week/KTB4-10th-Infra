@@ -46,6 +46,7 @@ module "security" {
 
   app_port                 = var.app_port
   management_port          = var.management_port
+  ai_port                  = var.ai_port
   private_app_subnet_cidrs = var.private_app_subnets
 }
 
@@ -112,6 +113,12 @@ module "ecs" {
   desired_capacity = var.ecs_desired_capacity
 }
 
+# 컨테이너 레지스트리 인증 정보
+module "registry" {
+  source = "../modules/registry"
+  name   = var.name
+}
+
 module "backend" {
   source = "../modules/backend"
   name   = var.name
@@ -120,6 +127,8 @@ module "backend" {
   capacity_provider_name = module.ecs.capacity_provider_name
   execution_role_arn     = module.iam.task_execution_role_arn
   task_role_arn          = module.iam.task_role_arn
+
+  ghcr_secret_arn = module.registry.ghcr_secret_arn
 
   image           = var.backend_image
   app_port        = var.app_port
@@ -131,6 +140,30 @@ module "backend" {
   environment = local.backend_environment
 
   target_group_arn = module.alb.target_group_arn
+}
+
+module "ai" {
+  source = "../modules/ai"
+  name   = var.name
+
+  cluster_name = module.ecs.cluster_name
+  cluster_arn  = module.ecs.cluster_arn
+
+  subnet_id             = module.network.private_app_subnet_ids[0]
+  private_ip            = var.ai_private_ip
+  security_group_id     = module.security.ai_security_group_id
+  instance_profile_name = module.iam.ecs_instance_profile_name
+
+  ami_id        = var.ai_ami_id
+  instance_type = var.ai_instance_type
+
+  execution_role_arn = module.iam.task_execution_role_arn
+  ghcr_secret_arn    = module.registry.ghcr_secret_arn
+
+  image       = var.ai_image
+  port        = var.ai_port
+  memory      = var.ai_memory
+  environment = local.ai_environment
 }
 
 module "alb" {
