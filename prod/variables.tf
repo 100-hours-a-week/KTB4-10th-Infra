@@ -193,3 +193,22 @@ variable "backend_storage_bucket_name" {
   type        = string
   default     = "kgb-s3-storage"
 }
+
+variable "domain_name" {
+  description = "서비스 도메인 (ALB 인증서 기본 도메인)"
+  type        = string
+  default     = "kguidebook.site"
+}
+
+variable "subject_alternative_names" {
+  description = "ALB 인증서 추가 도메인"
+  type        = list(string)
+  default     = ["*.kguidebook.site"]
+}
+
+# CloudFront 연결 전 직접 확인할 때만 내 IP를 넣고, 테스트 후 비울 것
+variable "alb_test_allowed_cidrs" {
+  description = "테스트용 ALB 443 접근 허용 CIDR (예: [\"1.2.3.4/32\"])"
+  type        = list(string)
+  default     = []
+}

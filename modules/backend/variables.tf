@@ -72,3 +72,9 @@ variable "log_retention_days" {
   type        = number
   default     = 90
 }
+
+variable "target_group_arn" {
+  description = "Backend를 등록할 ALB Target Group ARN (null이면 ALB 연결 없음)"
+  type        = string
+  default     = null
+}

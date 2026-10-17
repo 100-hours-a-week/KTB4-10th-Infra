@@ -122,6 +122,20 @@ resource "aws_ecs_service" "backend" {
     field = "attribute:ecs.availability-zone"
   }
 
+  # ALB Target Group 등록 (ECS가 Task의 EC2:8080을 자동 등록·해제)
+  dynamic "load_balancer" {
+    for_each = var.target_group_arn == null ? [] : [var.target_group_arn]
+
+    content {
+      target_group_arn = load_balancer.value
+      container_name   = "backend"
+      container_port   = var.app_port
+    }
+  }
+
+  # Spring Boot 기동(약 16초) 중 헬스 체크 실패로 Task가 교체되지 않도록 유예
+  health_check_grace_period_seconds = var.target_group_arn == null ? null : 90
+
   # 고정 포트라 같은 서버에 새 Task를 같이 띄울 수 없음
   # ALB와 블루/그린 도입 전까지는 1개씩 교체
   deployment_minimum_healthy_percent = 50
