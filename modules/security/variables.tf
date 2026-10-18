@@ -18,10 +18,14 @@ variable "management_port" {
   type        = number
 }
 
-variable "cadvisor_port" {
-  description = "ECS Host의 cAdvisor 포트"
+variable "node_exporter_port" {
+  description = "node-exporter 포트"
   type        = number
-  default     = 8082
+}
+
+variable "cadvisor_port" {
+  description = "cAdvisor 호스트 포트"
+  type        = number
 }
 
 variable "private_app_subnet_cidrs" {

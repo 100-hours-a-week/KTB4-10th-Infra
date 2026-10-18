@@ -145,8 +145,8 @@ resource "aws_vpc_security_group_ingress_rule" "ecs_host_node_exporter_from_moni
   description       = "Allow node-exporter scrape from monitoring"
 
   ip_protocol                  = "tcp"
-  from_port                    = 9100
-  to_port                      = 9100
+  from_port                    = var.node_exporter_port
+  to_port                      = var.node_exporter_port
   referenced_security_group_id = aws_security_group.monitoring.id
 }
 
@@ -196,7 +196,7 @@ resource "aws_vpc_security_group_egress_rule" "ecs_host_to_ai" {
 
 # ---------- AI ----------
 
-# ECS Host -> AI (/metrics 포함 전체 경로라 Backend 외에는 열지 않음)
+# ECS Host -> AI (/metrics 포함 전체 경로라 Backend와 Monitoring 외에는 열지 않음)
 resource "aws_vpc_security_group_ingress_rule" "ai_from_ecs_host" {
   security_group_id = aws_security_group.ai.id
   description       = "Allow AI port from backend container on ECS host"
@@ -205,6 +205,39 @@ resource "aws_vpc_security_group_ingress_rule" "ai_from_ecs_host" {
   from_port                    = var.ai_port
   to_port                      = var.ai_port
   referenced_security_group_id = aws_security_group.ecs_host.id
+}
+
+# Monitoring -> AI (node-exporter)
+resource "aws_vpc_security_group_ingress_rule" "ai_node_exporter_from_monitoring" {
+  security_group_id = aws_security_group.ai.id
+  description       = "Allow node-exporter scrape from monitoring"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.node_exporter_port
+  to_port                      = var.node_exporter_port
+  referenced_security_group_id = aws_security_group.monitoring.id
+}
+
+# Monitoring -> AI (cAdvisor)
+resource "aws_vpc_security_group_ingress_rule" "ai_cadvisor_from_monitoring" {
+  security_group_id = aws_security_group.ai.id
+  description       = "Allow cAdvisor scrape from monitoring"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.cadvisor_port
+  to_port                      = var.cadvisor_port
+  referenced_security_group_id = aws_security_group.monitoring.id
+}
+
+# Monitoring -> AI (/metrics 수집. 내부 Monitoring SG에만 허용)
+resource "aws_vpc_security_group_ingress_rule" "ai_metrics_from_monitoring" {
+  security_group_id = aws_security_group.ai.id
+  description       = "Allow AI metrics scrape from monitoring"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.ai_port
+  to_port                      = var.ai_port
+  referenced_security_group_id = aws_security_group.monitoring.id
 }
 
 # AI -> 외부 HTTPS (ECS 에이전트, 이미지 다운로드, SSM, 향후 RunPod)
@@ -261,8 +294,8 @@ resource "aws_vpc_security_group_egress_rule" "monitoring_to_node_exporter" {
   description       = "Allow node-exporter scrape to ECS host"
 
   ip_protocol                  = "tcp"
-  from_port                    = 9100
-  to_port                      = 9100
+  from_port                    = var.node_exporter_port
+  to_port                      = var.node_exporter_port
   referenced_security_group_id = aws_security_group.ecs_host.id
 }
 
@@ -286,6 +319,39 @@ resource "aws_vpc_security_group_egress_rule" "monitoring_to_ecs_host_management
   from_port                    = var.management_port
   to_port                      = var.management_port
   referenced_security_group_id = aws_security_group.ecs_host.id
+}
+
+# Monitoring -> AI (node-exporter)
+resource "aws_vpc_security_group_egress_rule" "monitoring_to_ai_node_exporter" {
+  security_group_id = aws_security_group.monitoring.id
+  description       = "Allow node-exporter scrape to AI host"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.node_exporter_port
+  to_port                      = var.node_exporter_port
+  referenced_security_group_id = aws_security_group.ai.id
+}
+
+# Monitoring -> AI (cAdvisor)
+resource "aws_vpc_security_group_egress_rule" "monitoring_to_ai_cadvisor" {
+  security_group_id = aws_security_group.monitoring.id
+  description       = "Allow cAdvisor scrape to AI host"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.cadvisor_port
+  to_port                      = var.cadvisor_port
+  referenced_security_group_id = aws_security_group.ai.id
+}
+
+# Monitoring -> AI (/metrics)
+resource "aws_vpc_security_group_egress_rule" "monitoring_to_ai_metrics" {
+  security_group_id = aws_security_group.monitoring.id
+  description       = "Allow AI metrics scrape to AI host"
+
+  ip_protocol                  = "tcp"
+  from_port                    = var.ai_port
+  to_port                      = var.ai_port
+  referenced_security_group_id = aws_security_group.ai.id
 }
 
 # Monitoring -> 외부 HTTPS
