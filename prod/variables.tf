@@ -281,3 +281,50 @@ variable "cadvisor_image" {
   type        = string
   default     = "ghcr.io/google/cadvisor:v0.60.6"
 }
+
+# ---------- Monitoring 서버 ----------
+
+# ubuntu-resolute-26.04-amd64-server-20261003 (NAT와 같은 AMI)
+variable "monitoring_ami_id" {
+  description = "Monitoring 서버 AMI ID (Ubuntu 26.04, x86_64)"
+  type        = string
+  default     = "ami-0e677ebf2c8434c2a"
+}
+
+variable "monitoring_instance_type" {
+  description = "Monitoring 서버 인스턴스 타입"
+  type        = string
+  default     = "t3.small"
+}
+
+# private-app-a(10.10.10.0/24) 뒤쪽 주소. AI(.250), ASG 서버와 겹치지 않게 사용 중인지 확인 후 지정
+variable "monitoring_private_ip" {
+  description = "Monitoring 서버 사설 IP"
+  type        = string
+  default     = "10.10.10.240"
+}
+
+# V1 kgb-monitoring과 같은 버전 (대시보드 호환)
+variable "prometheus_image" {
+  description = "Prometheus 이미지"
+  type        = string
+  default     = "prom/prometheus:v3.15.0"
+}
+
+variable "grafana_image" {
+  description = "Grafana 이미지"
+  type        = string
+  default     = "grafana/grafana:13.2.3"
+}
+
+variable "mysqld_exporter_image" {
+  description = "mysqld-exporter 이미지"
+  type        = string
+  default     = "prom/mysqld-exporter:v0.20.0"
+}
+
+variable "monitoring_db_username" {
+  description = "mysqld-exporter가 사용할 RDS 계정 이름"
+  type        = string
+  default     = "exporter"
+}

@@ -182,6 +182,36 @@ module "exporters" {
   cadvisor_port       = var.cadvisor_port
 }
 
+# Prometheus, Grafana, mysqld-exporter (ECS 밖 단일 EC2)
+module "monitoring" {
+  source = "../modules/monitoring"
+  name   = var.name
+
+  subnet_id             = module.network.private_app_subnet_ids[0]
+  private_ip            = var.monitoring_private_ip
+  security_group_id     = module.security.monitoring_security_group_id
+  instance_profile_name = module.iam.monitoring_instance_profile_name
+
+  ami_id        = var.monitoring_ami_id
+  instance_type = var.monitoring_instance_type
+
+  prometheus_image      = var.prometheus_image
+  grafana_image         = var.grafana_image
+  mysqld_exporter_image = var.mysqld_exporter_image
+
+  ecs_host_name_tag  = "${var.name}-ecs-host"
+  ai_name_tag        = "${var.name}-ai"
+  ai_private_ip      = module.ai.private_ip
+  ai_port            = var.ai_port
+  management_port    = var.management_port
+  node_exporter_port = var.node_exporter_port
+  cadvisor_port      = var.cadvisor_port
+
+  db_address  = module.rds.address
+  db_port     = module.rds.port
+  db_username = var.monitoring_db_username
+}
+
 module "alb" {
   source = "../modules/alb"
   name   = var.name

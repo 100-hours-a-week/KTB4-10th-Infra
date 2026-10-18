@@ -188,6 +188,13 @@ data "aws_iam_policy_document" "monitoring" {
     ]
     resources = ["*"]
   }
+
+  # Grafana 관리자, mysqld-exporter 비밀번호 (user_data에서 조회)
+  statement {
+    sid       = "ReadMonitoringSecrets"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.name}/monitoring/*"]
+  }
 }
 
 resource "aws_iam_role_policy" "monitoring" {
