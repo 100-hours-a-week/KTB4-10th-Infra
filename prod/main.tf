@@ -47,6 +47,8 @@ module "security" {
   app_port                 = var.app_port
   management_port          = var.management_port
   ai_port                  = var.ai_port
+  node_exporter_port       = var.node_exporter_port
+  cadvisor_port            = var.cadvisor_port
   private_app_subnet_cidrs = var.private_app_subnets
 }
 
@@ -164,6 +166,20 @@ module "ai" {
   port        = var.ai_port
   memory      = var.ai_memory
   environment = local.ai_environment
+}
+
+# 모니터링 Daemon (클러스터의 모든 서버에 1개씩)
+module "exporters" {
+  source = "../modules/exporters"
+  name   = var.name
+
+  cluster_arn        = module.ecs.cluster_arn
+  execution_role_arn = module.iam.task_execution_role_arn
+
+  node_exporter_image = var.node_exporter_image
+  node_exporter_port  = var.node_exporter_port
+  cadvisor_image      = var.cadvisor_image
+  cadvisor_port       = var.cadvisor_port
 }
 
 module "alb" {

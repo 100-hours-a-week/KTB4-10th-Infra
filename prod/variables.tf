@@ -54,6 +54,19 @@ variable "ai_port" {
   default     = 8000
 }
 
+variable "node_exporter_port" {
+  description = "node-exporter 포트"
+  type        = number
+  default     = 9100
+}
+
+# Backend 8080, 8081과 겹치지 않게 지정
+variable "cadvisor_port" {
+  description = "cAdvisor 호스트 포트"
+  type        = number
+  default     = 8082
+}
+
 variable "github_backend_subjects" {
   description = "백엔드  GitHub Actions OIDC Subject"
   type        = list(string)
@@ -252,4 +265,19 @@ variable "ai_memory" {
   description = "AI 컨테이너 메모리 상한 (MiB, V1 실측 최대 약 135 MiB)"
   type        = number
   default     = 1024
+}
+
+# ---------- Monitoring Daemon ----------
+
+# V1 kgb-monitoring과 같은 버전 (대시보드 호환)
+variable "node_exporter_image" {
+  description = "node-exporter 이미지"
+  type        = string
+  default     = "quay.io/prometheus/node-exporter:v1.12.1"
+}
+
+variable "cadvisor_image" {
+  description = "cAdvisor 이미지"
+  type        = string
+  default     = "ghcr.io/google/cadvisor:v0.60.6"
 }
