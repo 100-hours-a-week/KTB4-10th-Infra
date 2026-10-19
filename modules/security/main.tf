@@ -264,6 +264,17 @@ resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_ecs_host" {
   referenced_security_group_id = aws_security_group.ecs_host.id
 }
 
+# Monitoring -> RDS (mysqld-exporter)
+resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_monitoring" {
+  security_group_id = aws_security_group.rds.id
+  description       = "Allow MySQL from mysqld-exporter on monitoring"
+
+  ip_protocol                  = "tcp"
+  from_port                    = 3306
+  to_port                      = 3306
+  referenced_security_group_id = aws_security_group.monitoring.id
+}
+
 # NAT -> RDS (운영자 SSM 포트 포워딩)
 resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_nat" {
   security_group_id = aws_security_group.rds.id
@@ -352,6 +363,17 @@ resource "aws_vpc_security_group_egress_rule" "monitoring_to_ai_metrics" {
   from_port                    = var.ai_port
   to_port                      = var.ai_port
   referenced_security_group_id = aws_security_group.ai.id
+}
+
+# Monitoring -> RDS (mysqld-exporter)
+resource "aws_vpc_security_group_egress_rule" "monitoring_to_rds" {
+  security_group_id = aws_security_group.monitoring.id
+  description       = "Allow MySQL from mysqld-exporter to RDS"
+
+  ip_protocol                  = "tcp"
+  from_port                    = 3306
+  to_port                      = 3306
+  referenced_security_group_id = aws_security_group.rds.id
 }
 
 # Monitoring -> 외부 HTTPS
