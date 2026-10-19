@@ -91,6 +91,14 @@ variable "environment" {
   type        = map(string)
 }
 
+variable "secret_names" {
+  description = "Parameter Store에서 주입할 AI  시크릿 환경 변수 이름"
+  type        = list(string)
+  default = [
+    "ANTHROPIC_API_KEY",
+  ]
+}
+
 variable "log_retention_days" {
   description = "AI 로그 보존 기간 (일)"
   type        = number

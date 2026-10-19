@@ -1,5 +1,26 @@
 data "aws_region" "current" {}
 
+# ---------- 비밀 값 저장소 (값은 콘솔/CLI로 직접 입력) ----------
+
+# AI 비밀 환경 변수 (Parameter Store SecureString)
+resource "aws_ssm_parameter" "secrets" {
+  for_each = toset(var.secret_names)
+
+  name        = "/${var.name}/ai/${each.key}"
+  description = "AI secret environment variable ${each.key}"
+  type        = "SecureString"
+
+  value = "CHANGE_ME"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  tags = {
+    Name = "/${var.name}/ai/${each.key}"
+  }
+}
+
 # ---------- AI 전용 EC2 (IP 고정) ----------
 
 # ASG 대신 단일 인스턴스로 두어 사설 IP를 고정. Backend는 이 IP로 AI를 호출
@@ -83,6 +104,8 @@ resource "aws_ecs_task_definition" "ai" {
       ]
 
       environment = [for k, v in var.environment : { name = k, value = v }]
+
+      secrets = [for n in var.secret_names : { name = n, valueFrom = aws_ssm_parameter.secrets[n].arn }]
 
       logConfiguration = {
         logDriver = "awslogs"
