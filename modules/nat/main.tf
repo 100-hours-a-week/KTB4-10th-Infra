@@ -8,8 +8,8 @@ resource "aws_instance" "nat" {
   subnet_id              = var.public_subnet_ids[count.index]
   vpc_security_group_ids = [var.security_group_id]
 
-  # EIP만 사용
-  associate_public_ip_address = false
+  # EIP를 쓰면 자동 공인 IP는 받지 않음
+  associate_public_ip_address = !var.use_eip
 
   # EIP가 붙으면 true로 읽혀서 인스턴스가 교체되는 것 방지
   lifecycle {
@@ -43,7 +43,7 @@ resource "aws_instance" "nat" {
 }
 
 resource "aws_eip" "nat" {
-  count = length(var.public_subnet_ids)
+  count = var.use_eip ? length(var.public_subnet_ids) : 0
 
   domain = "vpc"
 
@@ -54,7 +54,7 @@ resource "aws_eip" "nat" {
 
 # EIP를 NAT EC2에 연결
 resource "aws_eip_association" "nat" {
-  count = length(aws_instance.nat)
+  count = var.use_eip ? length(var.public_subnet_ids) : 0
 
   instance_id   = aws_instance.nat[count.index].id
   allocation_id = aws_eip.nat[count.index].id

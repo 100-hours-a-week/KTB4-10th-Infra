@@ -35,12 +35,12 @@ output "nat_instance_profile_name" {
 
 output "github_backend_deploy_role_arn" {
   description = "백엔드 GitHub Actions 배포 역할 ARN"
-  value       = aws_iam_role.github_backend_deploy.arn
+  value       = one(aws_iam_role.github_backend_deploy[*].arn)
 }
 
 output "github_frontend_deploy_role_arn" {
   description = "프론트엔드 GitHub Actions 배포 역할 ARN"
-  value       = aws_iam_role.github_frontend_deploy.arn
+  value       = one(aws_iam_role.github_frontend_deploy[*].arn)
 }
 
 output "developer_port_forward_policy_arn" {

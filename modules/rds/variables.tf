@@ -78,3 +78,21 @@ variable "log_retention_days" {
   type        = number
   default     = 90
 }
+
+variable "multi_az" {
+  description = "Multi-AZ 배포 (대기 인스턴스 자동 장애 조치)"
+  type        = bool
+  default     = true
+}
+
+variable "deletion_protection" {
+  description = "RDS 삭제 방지"
+  type        = bool
+  default     = true
+}
+
+variable "skip_final_snapshot" {
+  description = "삭제 시 최종 스냅샷 생략 (false면 <name>-mysql-final 생성)"
+  type        = bool
+  default     = false
+}

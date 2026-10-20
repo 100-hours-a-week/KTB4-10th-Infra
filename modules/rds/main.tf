@@ -30,7 +30,7 @@ resource "aws_db_parameter_group" "main" {
   }
 }
 
-# RDS MySQL (Multi-AZ)
+# RDS MySQL
 resource "aws_db_instance" "main" {
   identifier = "${var.name}-db"
 
@@ -45,7 +45,7 @@ resource "aws_db_instance" "main" {
   storage_encrypted     = true
 
   # 네트워크
-  multi_az               = true
+  multi_az               = var.multi_az
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [var.security_group_id]
   publicly_accessible    = false
@@ -72,10 +72,10 @@ resource "aws_db_instance" "main" {
   # 로그
   enabled_cloudwatch_logs_exports = ["error"]
 
-  # 삭제 보호
-  deletion_protection       = true
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "${var.name}-mysql-final"
+  # 삭제 보호 (staging처럼 지우고 다시 만드는 환경만 끔)
+  deletion_protection       = var.deletion_protection
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-mysql-final"
 
   tags = {
     Name = "${var.name}-db"
