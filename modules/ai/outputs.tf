@@ -17,3 +17,8 @@ output "service_name" {
   description = "AI ECS Service 이름"
   value       = aws_ecs_service.ai.name
 }
+
+output "secret_parameter_names" {
+  description = "비밀 값을 넣을 Parameter Store 이름 목록"
+  value       = [for p in aws_ssm_parameter.secrets : p.name]
+}
