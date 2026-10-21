@@ -28,7 +28,7 @@ locals {
     COUPON_CREDIT_AMOUNT = "5"
 
     # Tour API (V1과 동시 실행 방지, 전환 시 활성화)
-    TOUR_API_SCHEDULER_ENABLED = "false"
+    TOUR_API_SCHEDULER_ENABLED = "true"
 
     # 웹 푸시
     WEB_PUSH_VAPID_PUBLIC_KEY = "BNZ3naXJsQwUgRjK5S1RMQP00mDtF_SBpTDXya5FdleUIJ2SDU2F32AYvYtcYr-BGKNWbA08MYzB0VGfxw7HXcM"
