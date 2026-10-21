@@ -152,6 +152,12 @@ resource "aws_ecs_service" "ai" {
   enable_ecs_managed_tags = true
   propagate_tags          = "SERVICE"
 
+  # 이미지는 AI repo CD가 새 리비전을 등록해 배포하므로 되돌리지 않음
+  # Terraform에서 바꾼 설정(환경 변수 등)은 새 리비전만 만들고, 서비스 반영은 CD 실행 또는 수동 update-service
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
   tags = {
     Name = "${var.name}-ai"
   }
