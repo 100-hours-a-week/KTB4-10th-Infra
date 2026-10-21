@@ -8,6 +8,10 @@ locals {
   region     = data.aws_region.current.region
 
   github_oidc_url = "token.actions.githubusercontent.com"
+
+  # subject를 비우면 GitHub 배포 역할을 만들지 않음 (staging 등)
+  create_backend_deploy  = length(var.github_backend_subjects) > 0
+  create_frontend_deploy = length(var.github_frontend_subjects) > 0
 }
 
 data "aws_iam_openid_connect_provider" "github" {
@@ -290,6 +294,8 @@ resource "aws_iam_policy" "developer_port_forward" {
 
 # 지정한 저장소/브랜치의 워크플로만 Assume
 data "aws_iam_policy_document" "github_backend_assume" {
+  count = local.create_backend_deploy ? 1 : 0
+
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
 
@@ -314,9 +320,11 @@ data "aws_iam_policy_document" "github_backend_assume" {
 
 # GitHub Actions 배포 역할
 resource "aws_iam_role" "github_backend_deploy" {
+  count = local.create_backend_deploy ? 1 : 0
+
   name               = "${var.name}-backend-deploy-role"
   description        = "GitHub Actions ECS deploy role"
-  assume_role_policy = data.aws_iam_policy_document.github_backend_assume.json
+  assume_role_policy = data.aws_iam_policy_document.github_backend_assume[0].json
 
   tags = {
     Name = "${var.name}-backend-deploy-role"
@@ -325,6 +333,8 @@ resource "aws_iam_role" "github_backend_deploy" {
 
 # ECS 배포 권한
 data "aws_iam_policy_document" "github_backend_deploy" {
+  count = local.create_backend_deploy ? 1 : 0
+
   statement {
     sid = "RegisterTaskDefinition"
     actions = [
@@ -362,15 +372,30 @@ data "aws_iam_policy_document" "github_backend_deploy" {
 
 # 백엔드 Role에 배포 권한 연결
 resource "aws_iam_role_policy" "github_backend_deploy" {
+  count = local.create_backend_deploy ? 1 : 0
+
   name   = "${var.name}-backend-deploy-policy"
-  role   = aws_iam_role.github_backend_deploy.id
-  policy = data.aws_iam_policy_document.github_backend_deploy.json
+  role   = aws_iam_role.github_backend_deploy[0].id
+  policy = data.aws_iam_policy_document.github_backend_deploy[0].json
+}
+
+# 선택 생성(count)으로 바꾸기 전 state 주소 유지
+moved {
+  from = aws_iam_role.github_backend_deploy
+  to   = aws_iam_role.github_backend_deploy[0]
+}
+
+moved {
+  from = aws_iam_role_policy.github_backend_deploy
+  to   = aws_iam_role_policy.github_backend_deploy[0]
 }
 
 # ---------- GitHub Actions: Frontend ----------
 
 # 프론트엔드 GitHub Actions만 Assume 가능
 data "aws_iam_policy_document" "github_frontend_assume" {
+  count = local.create_frontend_deploy ? 1 : 0
+
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
 
@@ -395,9 +420,11 @@ data "aws_iam_policy_document" "github_frontend_assume" {
 
 # 프론트엔드 배포 Role
 resource "aws_iam_role" "github_frontend_deploy" {
+  count = local.create_frontend_deploy ? 1 : 0
+
   name               = "${var.name}-frontend-deploy-role"
   description        = "GitHub Actions frontend deploy role"
-  assume_role_policy = data.aws_iam_policy_document.github_frontend_assume.json
+  assume_role_policy = data.aws_iam_policy_document.github_frontend_assume[0].json
 
   tags = {
     Name = "${var.name}-frontend-deploy-role"
@@ -406,6 +433,7 @@ resource "aws_iam_role" "github_frontend_deploy" {
 
 # S3 배포 및 CloudFront 캐시 무효화 권한
 data "aws_iam_policy_document" "github_frontend_deploy" {
+  count = local.create_frontend_deploy ? 1 : 0
 
   # S3 버킷 조회
   statement {
@@ -443,7 +471,19 @@ data "aws_iam_policy_document" "github_frontend_deploy" {
 
 # 프론트엔드 Role에 권한 연결
 resource "aws_iam_role_policy" "github_frontend_deploy" {
+  count = local.create_frontend_deploy ? 1 : 0
+
   name   = "${var.name}-frontend-deploy-policy"
-  role   = aws_iam_role.github_frontend_deploy.id
-  policy = data.aws_iam_policy_document.github_frontend_deploy.json
+  role   = aws_iam_role.github_frontend_deploy[0].id
+  policy = data.aws_iam_policy_document.github_frontend_deploy[0].json
+}
+
+moved {
+  from = aws_iam_role.github_frontend_deploy
+  to   = aws_iam_role.github_frontend_deploy[0]
+}
+
+moved {
+  from = aws_iam_role_policy.github_frontend_deploy
+  to   = aws_iam_role_policy.github_frontend_deploy[0]
 }

@@ -5,5 +5,5 @@ output "instance_ids" {
 
 output "public_ips" {
   description = "NAT 공인 IP 목록"
-  value       = aws_eip.nat[*].public_ip
+  value       = var.use_eip ? aws_eip.nat[*].public_ip : aws_instance.nat[*].public_ip
 }

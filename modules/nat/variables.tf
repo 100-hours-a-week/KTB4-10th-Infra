@@ -37,3 +37,10 @@ variable "instance_profile_name" {
   description = "NAT 인스턴스 프로파일 이름 (Session Manager 접속용)"
   type        = string
 }
+
+# false면 인스턴스 자동 공인 IP 사용 (EIP 한도와 무관, 중지 후 시작하면 IP가 바뀜)
+variable "use_eip" {
+  description = "NAT 공인 IP로 EIP 사용"
+  type        = bool
+  default     = true
+}

@@ -286,6 +286,69 @@ resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_nat" {
   referenced_security_group_id = aws_security_group.nat.id
 }
 
+# ---------- VPC 밖 (Peering) ----------
+
+# 외부 Backend -> RDS (staging에서 V1 테스트 Backend가 같은 DB 사용)
+resource "aws_vpc_security_group_ingress_rule" "rds_mysql_from_external" {
+  for_each = toset(var.external_db_cidrs)
+
+  security_group_id = aws_security_group.rds.id
+  description       = "Allow MySQL from external backend over VPC peering"
+
+  ip_protocol = "tcp"
+  from_port   = 3306
+  to_port     = 3306
+  cidr_ipv4   = each.value
+}
+
+# 외부 Prometheus -> ECS Host, AI (메트릭 수집 포트별 규칙)
+locals {
+  external_scrape_rules = merge(
+    {
+      for c in var.external_scrape_cidrs : "ecs_host_management_${c}" => {
+        sg = aws_security_group.ecs_host.id, port = var.management_port, cidr = c
+      }
+    },
+    {
+      for c in var.external_scrape_cidrs : "ecs_host_node_exporter_${c}" => {
+        sg = aws_security_group.ecs_host.id, port = var.node_exporter_port, cidr = c
+      }
+    },
+    {
+      for c in var.external_scrape_cidrs : "ecs_host_cadvisor_${c}" => {
+        sg = aws_security_group.ecs_host.id, port = var.cadvisor_port, cidr = c
+      }
+    },
+    {
+      for c in var.external_scrape_cidrs : "ai_metrics_${c}" => {
+        sg = aws_security_group.ai.id, port = var.ai_port, cidr = c
+      }
+    },
+    {
+      for c in var.external_scrape_cidrs : "ai_node_exporter_${c}" => {
+        sg = aws_security_group.ai.id, port = var.node_exporter_port, cidr = c
+      }
+    },
+    {
+      for c in var.external_scrape_cidrs : "ai_cadvisor_${c}" => {
+        sg = aws_security_group.ai.id, port = var.cadvisor_port, cidr = c
+      }
+    },
+  )
+}
+
+resource "aws_vpc_security_group_ingress_rule" "scrape_from_external" {
+  for_each = local.external_scrape_rules
+
+  security_group_id = each.value.sg
+  description       = "Allow metrics scrape from external Prometheus over VPC peering"
+
+  ip_protocol = "tcp"
+  from_port   = each.value.port
+  to_port     = each.value.port
+  cidr_ipv4   = each.value.cidr
+}
+
 # ---------- Monitoring ----------
 
 # NAT -> Monitoring (Grafana SSM 포트 포워딩)
