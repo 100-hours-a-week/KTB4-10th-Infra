@@ -139,6 +139,11 @@ resource "aws_ecs_service" "backend" {
   enable_ecs_managed_tags = true
   propagate_tags          = "SERVICE"
 
+  # 이미지는 Backend repo CD가 새 리비전을 등록해 배포하므로 되돌리지 않음
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
   tags = {
     Name = "${var.name}-backend"
   }
