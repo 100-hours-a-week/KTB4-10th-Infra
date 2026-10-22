@@ -141,6 +141,11 @@ module "backend" {
   # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
   environment = local.backend_environment
 
+  # 콘솔에서 만든 Redis 인증 토큰 (backend.tf)
+  external_secrets = {
+    REDIS_PASSWORD = data.aws_secretsmanager_secret.redis_auth_token.arn
+  }
+
   target_group_arn = module.alb.target_group_arn
 }
 

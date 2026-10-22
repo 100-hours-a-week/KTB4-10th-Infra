@@ -72,6 +72,12 @@ variable "secret_names" {
   ]
 }
 
+variable "external_secrets" {
+  description = "외부 비밀 값에서 주입할 Backend 환경 변수 (이름 => ARN)"
+  type        = map(string)
+  default     = {}
+}
+
 variable "log_retention_days" {
   description = "Backend 로그 보존 기간 (일)"
   type        = number

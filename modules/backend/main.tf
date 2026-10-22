@@ -70,7 +70,10 @@ resource "aws_ecs_task_definition" "backend" {
 
       environment = [for k, v in var.environment : { name = k, value = v }]
 
-      secrets = [for n in var.secret_names : { name = n, valueFrom = aws_ssm_parameter.secrets[n].arn }]
+      secrets = concat(
+        [for n in var.secret_names : { name = n, valueFrom = aws_ssm_parameter.secrets[n].arn }],
+        [for k, v in var.external_secrets : { name = k, valueFrom = v }],
+      )
 
       logConfiguration = {
         logDriver = "awslogs"

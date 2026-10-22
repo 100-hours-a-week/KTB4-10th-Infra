@@ -1,3 +1,14 @@
+# ---------- Redis (콘솔 관리) ----------
+
+# kgb-prod-redis (Valkey, 전송 암호화 + 인증 토큰)
+data "aws_elasticache_replication_group" "redis" {
+  replication_group_id = "kgb-prod-redis"
+}
+
+data "aws_secretsmanager_secret" "redis_auth_token" {
+  name = "kgb-prod/redis/auth-token"
+}
+
 # Backend 컨테이너 일반 환경 변수
 locals {
   backend_environment = {
@@ -26,6 +37,18 @@ locals {
 
     # 쿠폰
     COUPON_CREDIT_AMOUNT = "5"
+
+    # Redis (세션, 알림, 쿠폰 시도 횟수). 비밀번호는 Secrets Manager (main.tf)
+    REDIS_HOST            = data.aws_elasticache_replication_group.redis.primary_endpoint_address
+    REDIS_PORT            = tostring(data.aws_elasticache_replication_group.redis.port)
+    REDIS_SSL_ENABLED     = "true"
+    REDIS_CONNECT_TIMEOUT = "2s"
+    REDIS_COMMAND_TIMEOUT = "2s"
+
+    REDIS_SESSION_NAMESPACE        = "kgb:prod:oauth:session"
+    NOTIFICATION_REDIS_ENABLED     = "true"
+    NOTIFICATION_REDIS_CHANNEL     = "kgb:prod:notification:sse"
+    COUPON_ATTEMPT_REDIS_NAMESPACE = "kgb:prod:coupon:attempt"
 
     # Tour API (V1과 동시 실행 방지, 전환 시 활성화)
     TOUR_API_SCHEDULER_ENABLED = "true"
