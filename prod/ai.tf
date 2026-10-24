@@ -5,5 +5,9 @@ locals {
     LLM_MODE           = "real"
     FAKE_LLM_DELAY_SEC = "50"
     SAVE_MODE          = "OFF"
+
+    # 글쓰기 LLM (claude 또는 vllm)
+    LLM_WRITE_BACKEND = "vllm"
+    VLLM_MODEL        = "kgb-writer"
   }
 }
