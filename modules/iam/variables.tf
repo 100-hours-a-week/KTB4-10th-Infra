@@ -9,6 +9,12 @@ variable "github_backend_subjects" {
   default     = []
 }
 
+variable "github_ai_subjects" {
+  description = "AI 배포 역할을 Assume할 수 있는 GitHub OIDC Subject 목록 (비우면 역할을 만들지 않음)"
+  type        = list(string)
+  default     = []
+}
+
 variable "github_frontend_subjects" {
   description = "프론트엔드 배포를 허용할 GitHub OIDC Subject 목록 (비우면 역할을 만들지 않음)"
   type        = list(string)
