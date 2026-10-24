@@ -70,6 +70,18 @@ resource "aws_cloudwatch_log_group" "ai" {
 
 # ---------- Task Definition ----------
 
+# CD가 마지막으로 등록한 리비전. 설정 변경 시 이미지를 되돌리지 않도록 그대로 사용
+data "aws_ecs_container_definition" "deployed" {
+  count = var.use_deployed_image ? 1 : 0
+
+  task_definition = "${var.name}-ai"
+  container_name  = "ai"
+}
+
+locals {
+  image = var.use_deployed_image ? data.aws_ecs_container_definition.deployed[0].image : var.image
+}
+
 resource "aws_ecs_task_definition" "ai" {
   family                   = "${var.name}-ai"
   network_mode             = "bridge"
@@ -81,7 +93,7 @@ resource "aws_ecs_task_definition" "ai" {
   container_definitions = jsonencode([
     {
       name      = "ai"
-      image     = var.image
+      image     = local.image
       essential = true
 
       mountPoints    = []
@@ -153,7 +165,7 @@ resource "aws_ecs_service" "ai" {
   propagate_tags          = "SERVICE"
 
   # 이미지는 AI repo CD가 새 리비전을 등록해 배포하므로 되돌리지 않음
-  # Terraform에서 바꾼 설정(환경 변수 등)은 새 리비전만 만들고, 서비스 반영은 CD 실행 또는 수동 update-service
+  # Terraform에서 바꾼 설정(환경 변수 등)은 배포된 이미지로 새 리비전만 만들고, 서비스 반영은 CD 실행 또는 수동 update-service
   lifecycle {
     ignore_changes = [task_definition]
   }

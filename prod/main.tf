@@ -168,10 +168,11 @@ module "ai" {
   execution_role_arn = module.iam.task_execution_role_arn
   ghcr_secret_arn    = module.registry.ghcr_secret_arn
 
-  image       = var.ai_image
-  port        = var.ai_port
-  memory      = var.ai_memory
-  environment = local.ai_environment
+  image              = var.ai_image
+  use_deployed_image = true
+  port               = var.ai_port
+  memory             = var.ai_memory
+  environment        = local.ai_environment
 }
 
 # 모니터링 Daemon (클러스터의 모든 서버에 1개씩)

@@ -11,3 +11,14 @@ locals {
     VLLM_MODEL        = "kgb-writer"
   }
 }
+
+# 콘솔에서 먼저 만든 VLLM 비밀 값을 state로 가져옴 (값은 유지)
+import {
+  to = module.ai.aws_ssm_parameter.secrets["VLLM_BASE_URL"]
+  id = "/${var.name}/ai/VLLM_BASE_URL"
+}
+
+import {
+  to = module.ai.aws_ssm_parameter.secrets["VLLM_API_KEY"]
+  id = "/${var.name}/ai/VLLM_API_KEY"
+}
