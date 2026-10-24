@@ -351,7 +351,7 @@ data "aws_iam_policy_document" "github_backend_deploy" {
       "ecs:DescribeServices",
       "ecs:UpdateService",
     ]
-    resources = ["arn:${local.partition}:ecs:${local.region}:${local.account_id}:service/${var.name}-*/*"]
+    resources = ["arn:${local.partition}:ecs:${local.region}:${local.account_id}:service/${var.name}-cluster/${var.name}-backend"]
   }
 
   # 태스크 정의에 넣을 역할만 ECS Task에 전달 가능
