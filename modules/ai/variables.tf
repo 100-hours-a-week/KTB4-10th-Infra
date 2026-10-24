@@ -96,6 +96,8 @@ variable "secret_names" {
   type        = list(string)
   default = [
     "ANTHROPIC_API_KEY",
+    "VLLM_BASE_URL",
+    "VLLM_API_KEY",
   ]
 }
 
