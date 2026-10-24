@@ -57,6 +57,7 @@ module "iam" {
   name   = var.name
 
   github_backend_subjects  = var.github_backend_subjects
+  github_ai_subjects       = var.github_ai_subjects
   github_frontend_subjects = var.github_frontend_subjects
 
   frontend_bucket_name                = var.frontend_bucket_name

@@ -11,6 +11,7 @@ locals {
 
   # subject를 비우면 GitHub 배포 역할을 만들지 않음 (staging 등)
   create_backend_deploy  = length(var.github_backend_subjects) > 0
+  create_ai_deploy       = length(var.github_ai_subjects) > 0
   create_frontend_deploy = length(var.github_frontend_subjects) > 0
 }
 
@@ -388,6 +389,92 @@ moved {
 moved {
   from = aws_iam_role_policy.github_backend_deploy
   to   = aws_iam_role_policy.github_backend_deploy[0]
+}
+
+# ---------- GitHub Actions: AI ----------
+
+# 지정한 저장소/브랜치의 워크플로만 Assume
+data "aws_iam_policy_document" "github_ai_assume" {
+  count = local.create_ai_deploy ? 1 : 0
+
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.github_oidc_url}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.github_oidc_url}:sub"
+      values   = var.github_ai_subjects
+    }
+  }
+}
+
+# GitHub Actions 배포 역할
+resource "aws_iam_role" "github_ai_deploy" {
+  count = local.create_ai_deploy ? 1 : 0
+
+  name               = "${var.name}-ai-deploy-role"
+  description        = "GitHub Actions AI ECS deploy role"
+  assume_role_policy = data.aws_iam_policy_document.github_ai_assume[0].json
+
+  tags = {
+    Name = "${var.name}-ai-deploy-role"
+  }
+}
+
+# ECS 배포 권한
+data "aws_iam_policy_document" "github_ai_deploy" {
+  count = local.create_ai_deploy ? 1 : 0
+
+  statement {
+    sid = "RegisterTaskDefinition"
+    actions = [
+      "ecs:DescribeTaskDefinition",
+      "ecs:RegisterTaskDefinition",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "UpdateService"
+    actions = [
+      "ecs:DescribeServices",
+      "ecs:UpdateService",
+    ]
+    resources = ["arn:${local.partition}:ecs:${local.region}:${local.account_id}:service/${var.name}-cluster/${var.name}-ai"]
+  }
+
+  # AI Task는 Task Role 없이 실행 역할만 사용
+  statement {
+    sid       = "PassTaskRoles"
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.task_execution.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+# AI Role에 배포 권한 연결
+resource "aws_iam_role_policy" "github_ai_deploy" {
+  count = local.create_ai_deploy ? 1 : 0
+
+  name   = "${var.name}-ai-deploy-policy"
+  role   = aws_iam_role.github_ai_deploy[0].id
+  policy = data.aws_iam_policy_document.github_ai_deploy[0].json
 }
 
 # ---------- GitHub Actions: Frontend ----------

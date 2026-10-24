@@ -72,6 +72,11 @@ variable "github_backend_subjects" {
   type        = list(string)
 }
 
+variable "github_ai_subjects" {
+  description = "AI GitHub Actions OIDC Subject"
+  type        = list(string)
+}
+
 variable "github_frontend_subjects" {
   description = "프론트엔드 GitHub Actions OIDC Subject"
   type        = list(string)

@@ -38,6 +38,11 @@ output "github_backend_deploy_role_arn" {
   value       = one(aws_iam_role.github_backend_deploy[*].arn)
 }
 
+output "github_ai_deploy_role_arn" {
+  description = "AI GitHub Actions 배포 역할 ARN"
+  value       = one(aws_iam_role.github_ai_deploy[*].arn)
+}
+
 output "github_frontend_deploy_role_arn" {
   description = "프론트엔드 GitHub Actions 배포 역할 ARN"
   value       = one(aws_iam_role.github_frontend_deploy[*].arn)
