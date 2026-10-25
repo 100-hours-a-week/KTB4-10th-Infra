@@ -380,17 +380,6 @@ resource "aws_iam_role_policy" "github_backend_deploy" {
   policy = data.aws_iam_policy_document.github_backend_deploy[0].json
 }
 
-# 선택 생성(count)으로 바꾸기 전 state 주소 유지
-moved {
-  from = aws_iam_role.github_backend_deploy
-  to   = aws_iam_role.github_backend_deploy[0]
-}
-
-moved {
-  from = aws_iam_role_policy.github_backend_deploy
-  to   = aws_iam_role_policy.github_backend_deploy[0]
-}
-
 # ---------- GitHub Actions: AI ----------
 
 # 지정한 저장소/브랜치의 워크플로만 Assume
@@ -563,14 +552,4 @@ resource "aws_iam_role_policy" "github_frontend_deploy" {
   name   = "${var.name}-frontend-deploy-policy"
   role   = aws_iam_role.github_frontend_deploy[0].id
   policy = data.aws_iam_policy_document.github_frontend_deploy[0].json
-}
-
-moved {
-  from = aws_iam_role.github_frontend_deploy
-  to   = aws_iam_role.github_frontend_deploy[0]
-}
-
-moved {
-  from = aws_iam_role_policy.github_frontend_deploy
-  to   = aws_iam_role_policy.github_frontend_deploy[0]
 }
