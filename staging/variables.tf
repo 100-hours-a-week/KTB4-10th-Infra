@@ -190,11 +190,11 @@ variable "ecs_desired_capacity" {
 
 # ---------- Backend ----------
 
-# prod와 같은 버전으로 비교
+
 variable "backend_image" {
   description = "Backend 컨테이너 이미지"
   type        = string
-  default     = "ghcr.io/100-hours-a-week/ktb4-10-be:6b98f8f-20261013"
+  default     = "ghcr.io/100-hours-a-week/ktb4-10-be:3d53a11-20261022"
 }
 
 variable "backend_desired_count" {
@@ -246,7 +246,7 @@ variable "alb_test_allowed_cidrs" {
 variable "ai_image" {
   description = "AI 컨테이너 이미지"
   type        = string
-  default     = "ghcr.io/100-hours-a-week/ktb4-10-ai:ff49476-20261015"
+  default     = "ghcr.io/100-hours-a-week/ktb4-10-ai:fc4b05e-20261022"
 }
 
 # al2023-ami-ecs-hvm-2023.0.20261014-kernel-6.1-x86_64 (ap-northeast-2)
