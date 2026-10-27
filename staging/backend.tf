@@ -27,6 +27,18 @@ locals {
     # 쿠폰
     COUPON_CREDIT_AMOUNT = "5"
 
+    # Redis (세션, 알림, 쿠폰 시도 횟수)
+    REDIS_HOST            = module.redis.primary_endpoint_address
+    REDIS_PORT            = tostring(module.redis.port)
+    REDIS_SSL_ENABLED     = "true"
+    REDIS_CONNECT_TIMEOUT = "2s"
+    REDIS_COMMAND_TIMEOUT = "2s"
+
+    REDIS_SESSION_NAMESPACE        = "kgb:staging:oauth:session"
+    NOTIFICATION_REDIS_ENABLED     = "true"
+    NOTIFICATION_REDIS_CHANNEL     = "kgb:staging:notification:sse"
+    COUPON_ATTEMPT_REDIS_NAMESPACE = "kgb:staging:coupon:attempt"
+
     # Tour API (V1 테스트와 동시 실행 방지, 전환 리허설 때 켜고 끄는 순서 검증)
     TOUR_API_SCHEDULER_ENABLED = "false"
 

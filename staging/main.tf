@@ -112,6 +112,16 @@ module "rds" {
   backup_retention_period = 1
 }
 
+# prod Redis(콘솔 관리)와 같은 구성
+module "redis" {
+  source = "../modules/redis"
+  name   = var.name
+
+  vpc_id                   = module.network.vpc_id
+  subnet_ids               = module.network.private_db_subnet_ids
+  client_security_group_id = module.security.ecs_host_security_group_id
+}
+
 module "ecs" {
   source = "../modules/ecs"
   name   = var.name
@@ -151,6 +161,11 @@ module "backend" {
 
   # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
   environment = local.backend_environment
+
+  # Redis 인증 토큰 (modules/redis가 생성)
+  external_secrets = {
+    REDIS_PASSWORD = module.redis.auth_token_secret_arn
+  }
 
   target_group_arn = module.alb.target_group_arn
 }
