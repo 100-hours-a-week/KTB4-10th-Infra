@@ -64,8 +64,6 @@ module "iam" {
   source = "../modules/iam"
   name   = var.name
 
-  backend_storage_bucket_name = var.backend_storage_bucket_name
-
   nat_instance_ids = module.nat.instance_ids
 }
 

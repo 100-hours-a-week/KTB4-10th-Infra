@@ -7,9 +7,8 @@ locals {
     DB_URL      = "jdbc:mysql://${module.rds.address}:${module.rds.port}/${var.db_name}"
     DB_USERNAME = var.backend_db_username
 
-    # S3
-    S3_BUCKET_NAME = var.backend_storage_bucket_name
-    AWS_REGION     = "ap-northeast-2"
+    AWS_REGION = "ap-northeast-2"
+
     # AI ( IP 고정)
     AI_SERVER_BASE_URL        = module.ai.base_url
     AI_SERVER_CONNECT_TIMEOUT = "3s"
