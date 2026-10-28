@@ -215,13 +215,6 @@ variable "backend_db_username" {
   default     = "kgb"
 }
 
-# V1 테스트, prod와 같은 버킷. k6 시나리오에 삭제 API를 넣지 않는 조건으로 공유
-variable "backend_storage_bucket_name" {
-  description = "Backend 파일 저장용 S3 버킷 이름"
-  type        = string
-  default     = "kgb-s3-storage"
-}
-
 variable "domain_name" {
   description = "ALB 인증서 기본 도메인"
   type        = string

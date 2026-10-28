@@ -137,8 +137,10 @@ resource "aws_iam_role" "task" {
   }
 }
 
-# Backend 파일 저장소 (V1 kgb-be-ec2-role의 s3access와 같은 범위)
+# Backend 파일 저장소 (V1 kgb-be-ec2-role의 s3access와 같은 범위, 버킷 미지정 시 생략)
 data "aws_iam_policy_document" "task" {
+  count = var.backend_storage_bucket_name == null ? 0 : 1
+
   statement {
     sid       = "ListStorageBucket"
     actions   = ["s3:ListBucket"]
@@ -157,9 +159,11 @@ data "aws_iam_policy_document" "task" {
 }
 
 resource "aws_iam_role_policy" "task" {
+  count = var.backend_storage_bucket_name == null ? 0 : 1
+
   name   = "${var.name}-task-policy"
   role   = aws_iam_role.task.id
-  policy = data.aws_iam_policy_document.task.json
+  policy = data.aws_iam_policy_document.task[0].json
 }
 
 # ---------- Monitoring ----------

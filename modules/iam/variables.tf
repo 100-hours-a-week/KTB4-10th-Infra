@@ -44,8 +44,9 @@ variable "frontend_cloudfront_distribution_id" {
 }
 
 variable "backend_storage_bucket_name" {
-  description = "Backend가 파일을 저장하는 S3 버킷 이름"
+  description = "Backend가 파일을 저장하는 S3 버킷 이름 (null이면 S3 권한 없음)"
   type        = string
+  default     = null
 }
 
 variable "nat_instance_ids" {
