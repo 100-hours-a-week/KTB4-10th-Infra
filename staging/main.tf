@@ -190,6 +190,9 @@ module "ai" {
   port        = var.ai_port
   memory      = var.ai_memory
   environment = local.ai_environment
+
+  # LLM_MODE는 코드 수정 없이 바꾸도록 Parameter Store에서 주입
+  secret_names = ["ANTHROPIC_API_KEY", "VLLM_BASE_URL", "VLLM_API_KEY", "LLM_MODE"]
 }
 
 # 모니터링 Daemon (클러스터의 모든 서버에 1개씩). 수집은 V1 테스트 서버의 Prometheus
