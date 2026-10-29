@@ -59,10 +59,17 @@ module "security" {
   external_scrape_cidrs = var.v1_test_cidrs
 }
 
-# GitHub 배포 역할은 만들지 않음 (subject 미지정)
+# Frontend 버킷/CloudFront는 콘솔 관리, 배포 역할만 Terraform으로 생성
 module "iam" {
   source = "../modules/iam"
   name   = var.name
+
+  github_backend_subjects  = var.github_backend_subjects
+  github_ai_subjects       = var.github_ai_subjects
+  github_frontend_subjects = var.github_frontend_subjects
+
+  frontend_bucket_name                = var.frontend_bucket_name
+  frontend_cloudfront_distribution_id = var.frontend_cloudfront_distribution_id
 
   nat_instance_ids = module.nat.instance_ids
 }
