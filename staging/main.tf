@@ -158,11 +158,12 @@ module "backend" {
 
   ghcr_secret_arn = module.registry.ghcr_secret_arn
 
-  image           = var.backend_image
-  app_port        = var.app_port
-  management_port = var.management_port
-  memory          = var.backend_memory
-  desired_count   = var.backend_desired_count
+  image              = var.backend_image
+  use_deployed_image = true
+  app_port           = var.app_port
+  management_port    = var.management_port
+  memory             = var.backend_memory
+  desired_count      = var.backend_desired_count
 
   # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
   environment = local.backend_environment
@@ -193,10 +194,11 @@ module "ai" {
   execution_role_arn = module.iam.task_execution_role_arn
   ghcr_secret_arn    = module.registry.ghcr_secret_arn
 
-  image       = var.ai_image
-  port        = var.ai_port
-  memory      = var.ai_memory
-  environment = local.ai_environment
+  image              = var.ai_image
+  use_deployed_image = true
+  port               = var.ai_port
+  memory             = var.ai_memory
+  environment        = local.ai_environment
 
   # LLM_MODE는 코드 수정 없이 바꾸도록 Parameter Store에서 주입
   secret_names = ["ANTHROPIC_API_KEY", "VLLM_BASE_URL", "VLLM_API_KEY", "LLM_MODE"]

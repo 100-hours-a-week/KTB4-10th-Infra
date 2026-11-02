@@ -33,6 +33,12 @@ variable "image" {
   type        = string
 }
 
+variable "use_deployed_image" {
+  description = "CD가 마지막으로 등록한 리비전의 이미지를 사용 (Task Definition이 이미 있을 때만 true)"
+  type        = bool
+  default     = false
+}
+
 variable "app_port" {
   description = "Backend API 포트 (컨테이너, 호스트 동일)"
   type        = number
