@@ -53,3 +53,12 @@ output "secret_parameter_names" {
     ghcr    = module.registry.ghcr_secret_name
   }
 }
+
+output "github_deploy_role_arns" {
+  description = "GitHub Actions 배포 역할 ARN (워크플로 role-to-assume)"
+  value = {
+    backend  = module.iam.github_backend_deploy_role_arn
+    ai       = module.iam.github_ai_deploy_role_arn
+    frontend = module.iam.github_frontend_deploy_role_arn
+  }
+}

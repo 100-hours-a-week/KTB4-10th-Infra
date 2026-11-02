@@ -34,6 +34,18 @@ resource "aws_cloudwatch_log_group" "backend" {
 
 # ---------- Task Definition ----------
 
+# CD가 마지막으로 등록한 리비전. 설정 변경 시 이미지를 되돌리지 않도록 그대로 사용
+data "aws_ecs_container_definition" "deployed" {
+  count = var.use_deployed_image ? 1 : 0
+
+  task_definition = "${var.name}-backend"
+  container_name  = "backend"
+}
+
+locals {
+  image = var.use_deployed_image ? data.aws_ecs_container_definition.deployed[0].image : var.image
+}
+
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.name}-backend"
   network_mode             = "bridge"
@@ -47,7 +59,7 @@ resource "aws_ecs_task_definition" "backend" {
   container_definitions = jsonencode([
     {
       name      = "backend"
-      image     = var.image
+      image     = local.image
       essential = true
 
       # AWS가 저장 시 빈 값으로 채우는 항목. 코드에 없으면 매 plan마다 교체로 표시됨

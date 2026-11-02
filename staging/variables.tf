@@ -129,11 +129,11 @@ variable "db_parameter_group_family" {
   default     = "mysql8.4"
 }
 
-# V1 테스트와 V2 staging이 같은 DB를 쓰므로 비교 조건에는 영향 없음
+# prod와 같은 클래스 (부하 테스트 결과를 prod와 비교하기 위해)
 variable "db_instance_class" {
   description = "RDS 인스턴스 클래스"
   type        = string
-  default     = "db.t3.micro"
+  default     = "db.t3.small"
 }
 
 variable "db_allocated_storage" {
@@ -280,4 +280,29 @@ variable "cadvisor_image" {
   description = "cAdvisor 이미지"
   type        = string
   default     = "ghcr.io/google/cadvisor:v0.60.6"
+}
+
+variable "github_backend_subjects" {
+  description = "백엔드 GitHub Actions OIDC Subject"
+  type        = list(string)
+}
+
+variable "github_ai_subjects" {
+  description = "AI GitHub Actions OIDC Subject"
+  type        = list(string)
+}
+
+variable "github_frontend_subjects" {
+  description = "프론트엔드 GitHub Actions OIDC Subject"
+  type        = list(string)
+}
+
+variable "frontend_bucket_name" {
+  description = "staging 프론트엔드 배포용 S3 버킷 이름"
+  type        = string
+}
+
+variable "frontend_cloudfront_distribution_id" {
+  description = "staging CloudFront 배포 ID (캐시 무효화 대상)"
+  type        = string
 }
