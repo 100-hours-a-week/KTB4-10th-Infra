@@ -206,7 +206,7 @@ variable "backend_desired_count" {
 variable "backend_memory" {
   description = "Backend 컨테이너 메모리 상한 (MiB, t3.small 가용 1913 이내)"
   type        = number
-  default     = 1536
+  default     = 1280
 }
 
 variable "backend_db_username" {
