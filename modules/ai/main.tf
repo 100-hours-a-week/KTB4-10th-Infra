@@ -115,6 +115,20 @@ resource "aws_ecs_task_definition" "ai" {
         { containerPort = var.port, hostPort = var.port, protocol = "tcp" },
       ]
 
+      # 프로세스 생존만 확인 (/health는 외부 호출 없음). 3회 연속 실패 시 교체
+      healthCheck = {
+        # python:3.14-slim에는 curl/wget이 없어 venv의 Python으로 호출
+        command = [
+          "CMD",
+          "/app/.venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:${var.port}/health', timeout=3)",
+        ]
+        interval = 30
+        timeout  = 5
+        retries  = 3
+      }
+
       environment = [for k, v in var.environment : { name = k, value = v }]
 
       secrets = [for n in var.secret_names : { name = n, valueFrom = aws_ssm_parameter.secrets[n].arn }]
