@@ -92,7 +92,6 @@ variable "secret_names" {
     "COUPON_CODE",
     "TOUR_API_SERVICE_KEY",
     "WEB_PUSH_VAPID_PRIVATE_KEY",
-    "AI_CALLBACK_TOKEN",
   ]
 }
 

@@ -147,6 +147,25 @@ module "registry" {
   name   = var.name
 }
 
+# Backend/AI 공동 시크릿
+resource "aws_ssm_parameter" "shared" {
+  for_each = toset(["AI_CALLBACK_TOKEN"])
+
+  name        = "/${var.name}/shared/${each.key}"
+  description = "Shared secret environment variable ${each.key}"
+  type        = "SecureString"
+
+  value = "CHANGE_ME"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  tags = {
+    Name = "/${var.name}/shared/${each.key}"
+  }
+}
+
 module "backend" {
   source = "../modules/backend"
   name   = var.name
@@ -170,9 +189,10 @@ module "backend" {
   # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
   environment = local.backend_environment
 
-  # Redis 인증 토큰 (modules/redis가 생성)
+  # Redis 인증 토큰 (modules/redis가 생성), AI 콜백 토큰 (shared)
   external_secrets = {
-    REDIS_PASSWORD = module.redis.auth_token_secret_arn
+    REDIS_PASSWORD    = module.redis.auth_token_secret_arn
+    AI_CALLBACK_TOKEN = aws_ssm_parameter.shared["AI_CALLBACK_TOKEN"].arn
   }
 
   target_group_arn = module.alb.target_group_arn
@@ -206,6 +226,11 @@ module "ai" {
 
   # LLM_MODE는 코드 수정 없이 바꾸도록 Parameter Store에서 주입
   secret_names = ["ANTHROPIC_API_KEY", "VLLM_BASE_URL", "VLLM_API_KEY", "LLM_MODE"]
+
+  # Backend 콜백 인증 토큰 (Backend와 같은 shared 파라미터)
+  external_secrets = {
+    AI_CALLBACK_TOKEN = aws_ssm_parameter.shared["AI_CALLBACK_TOKEN"].arn
+  }
 }
 
 # 모니터링 Daemon (클러스터의 모든 서버에 1개씩). 수집은 V1 테스트 서버의 Prometheus
