@@ -43,13 +43,17 @@ data "aws_ecs_container_definition" "deployed" {
 }
 
 locals {
-  image = var.use_deployed_image ? data.aws_ecs_container_definition.deployed[0].image : var.image
+  image           = var.use_deployed_image ? data.aws_ecs_container_definition.deployed[0].image : var.image
+  service_connect = var.service_connect_namespace_arn != null
 }
 
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.name}-backend"
   network_mode             = "bridge"
   requires_compatibilities = ["EC2"]
+
+  # Service Connect는 Task 메모리 필수. 컨테이너 메모리를 뺀 나머지를 프록시(Envoy)가 사용
+  memory = local.service_connect ? var.memory + var.service_connect_proxy_memory : null
 
   # 이미지 다운로드, 비밀 값 조회, 로그 전송
   execution_role_arn = var.execution_role_arn
@@ -75,8 +79,9 @@ resource "aws_ecs_task_definition" "backend" {
       }
 
       # 호스트 포트 고정 (서버당 Task 1개)
+      # name은 Service Connect가 공개할 포트를 찾는 이름
       portMappings = [
-        { containerPort = var.app_port, hostPort = var.app_port, protocol = "tcp" },
+        { name = "http", containerPort = var.app_port, hostPort = var.app_port, protocol = "tcp", appProtocol = "http" },
         { containerPort = var.management_port, hostPort = var.management_port, protocol = "tcp" },
       ]
 
@@ -149,6 +154,35 @@ resource "aws_ecs_service" "backend" {
   deployment_circuit_breaker {
     enable   = true
     rollback = true
+  }
+
+  # 같은 네임스페이스의 서비스(AI)가 http://backend:8080으로 호출. ALB 트래픽은 프록시를 거치지 않음 (bridge 모드)
+  dynamic "service_connect_configuration" {
+    for_each = local.service_connect ? [1] : []
+
+    content {
+      enabled   = true
+      namespace = var.service_connect_namespace_arn
+
+      service {
+        port_name      = "http"
+        discovery_name = "backend"
+
+        client_alias {
+          dns_name = "backend"
+          port     = var.app_port
+        }
+      }
+
+      log_configuration {
+        log_driver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.backend.name
+          awslogs-region        = data.aws_region.current.region
+          awslogs-stream-prefix = "service-connect"
+        }
+      }
+    }
   }
 
   enable_ecs_managed_tags = true

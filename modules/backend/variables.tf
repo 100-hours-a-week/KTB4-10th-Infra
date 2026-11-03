@@ -54,6 +54,23 @@ variable "memory" {
   type        = number
 }
 
+variable "service_connect_namespace_arn" {
+  description = "Service Connect 네임스페이스 ARN (null이면 Service Connect 미사용)"
+  type        = string
+  default     = null
+}
+
+variable "service_connect_proxy_memory" {
+  description = "Service Connect 프록시를 고려하여 태스크 메모리에 추가할 용량(MiB)"
+  type        = number
+  default     = 128
+
+  validation {
+    condition     = var.service_connect_proxy_memory >= 64
+    error_message = "Service Connect 프록시 추가 메모리는 최소 64MiB 이상 권장."
+  }
+}
+
 variable "desired_count" {
   description = "실행할 Backend Task 수"
   type        = number

@@ -86,6 +86,23 @@ variable "stop_timeout" {
   default     = 120
 }
 
+variable "service_connect_namespace_arn" {
+  description = "Service Connect 네임스페이스 ARN (null이면 Service Connect 미사용)"
+  type        = string
+  default     = null
+}
+
+variable "service_connect_proxy_memory" {
+  description = "Service Connect 프록시를 고려하여 태스크 메모리에 추가할 용량(MiB)"
+  type        = number
+  default     = 128
+
+  validation {
+    condition     = var.service_connect_proxy_memory >= 64
+    error_message = "Service Connect 프록시 추가 메모리는 최소 64MiB 이상으로 설정하세요."
+  }
+}
+
 variable "desired_count" {
   description = "실행할 AI Task 수 (작업 큐가 메모리에 있어 1 유지)"
   type        = number

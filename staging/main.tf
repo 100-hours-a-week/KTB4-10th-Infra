@@ -165,6 +165,8 @@ module "backend" {
   memory             = var.backend_memory
   desired_count      = var.backend_desired_count
 
+  service_connect_namespace_arn = module.ecs.service_connect_namespace_arn
+
   # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
   environment = local.backend_environment
 
@@ -199,6 +201,8 @@ module "ai" {
   port               = var.ai_port
   memory             = var.ai_memory
   environment        = local.ai_environment
+
+  service_connect_namespace_arn = module.ecs.service_connect_namespace_arn
 
   # LLM_MODE는 코드 수정 없이 바꾸도록 Parameter Store에서 주입
   secret_names = ["ANTHROPIC_API_KEY", "VLLM_BASE_URL", "VLLM_API_KEY", "LLM_MODE"]
