@@ -50,6 +50,7 @@ output "secret_parameter_names" {
   value = {
     backend = module.backend.secret_parameter_names
     ai      = module.ai.secret_parameter_names
+    shared  = [for p in aws_ssm_parameter.shared : p.name]
     ghcr    = module.registry.ghcr_secret_name
   }
 }

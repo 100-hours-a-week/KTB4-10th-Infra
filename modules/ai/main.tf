@@ -79,13 +79,17 @@ data "aws_ecs_container_definition" "deployed" {
 }
 
 locals {
-  image = var.use_deployed_image ? data.aws_ecs_container_definition.deployed[0].image : var.image
+  image           = var.use_deployed_image ? data.aws_ecs_container_definition.deployed[0].image : var.image
+  service_connect = var.service_connect_namespace_arn != null
 }
 
 resource "aws_ecs_task_definition" "ai" {
   family                   = "${var.name}-ai"
   network_mode             = "bridge"
   requires_compatibilities = ["EC2"]
+
+  # Service Connect는 Task 메모리 필수. 컨테이너 메모리를 뺀 나머지를 프록시(Envoy)가 사용
+  memory = local.service_connect ? var.memory + var.service_connect_proxy_memory : null
 
   # 이미지 다운로드(GHCR 인증), 로그 전송
   execution_role_arn = var.execution_role_arn
@@ -131,7 +135,10 @@ resource "aws_ecs_task_definition" "ai" {
 
       environment = [for k, v in var.environment : { name = k, value = v }]
 
-      secrets = [for n in var.secret_names : { name = n, valueFrom = aws_ssm_parameter.secrets[n].arn }]
+      secrets = concat(
+        [for n in var.secret_names : { name = n, valueFrom = aws_ssm_parameter.secrets[n].arn }],
+        [for k, v in var.external_secrets : { name = k, valueFrom = v }],
+      )
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -173,6 +180,25 @@ resource "aws_ecs_service" "ai" {
   deployment_circuit_breaker {
     enable   = true
     rollback = true
+  }
+
+  # 호출만 하는 클라이언트 (공개 포트 없음). 네임스페이스의 backend:8080을 프록시로 호출
+  dynamic "service_connect_configuration" {
+    for_each = local.service_connect ? [1] : []
+
+    content {
+      enabled   = true
+      namespace = var.service_connect_namespace_arn
+
+      log_configuration {
+        log_driver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ai.name
+          awslogs-region        = data.aws_region.current.region
+          awslogs-stream-prefix = "service-connect"
+        }
+      }
+    }
   }
 
   enable_ecs_managed_tags = true

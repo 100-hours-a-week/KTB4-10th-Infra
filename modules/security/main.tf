@@ -194,6 +194,18 @@ resource "aws_vpc_security_group_egress_rule" "ecs_host_to_ai" {
   referenced_security_group_id = aws_security_group.ai.id
 }
 
+# AI -> ECS Host (Service Connect 프록시 간 통신)
+# bridge 모드에서 Backend Task의 프록시는 동적 호스트 포트로 열림 (Linux 기본 32768~60999, ECS 기본 상한 65535)
+resource "aws_vpc_security_group_ingress_rule" "ecs_host_service_connect_from_ai" {
+  security_group_id = aws_security_group.ecs_host.id
+  description       = "Allow Service Connect proxy traffic from AI on dynamic host ports"
+
+  ip_protocol                  = "tcp"
+  from_port                    = 32768
+  to_port                      = 65535
+  referenced_security_group_id = aws_security_group.ai.id
+}
+
 # ---------- AI ----------
 
 # ECS Host -> AI (/metrics 포함 전체 경로라 Backend와 Monitoring 외에는 열지 않음)
@@ -249,6 +261,17 @@ resource "aws_vpc_security_group_egress_rule" "ai_https" {
   from_port   = 443
   to_port     = 443
   cidr_ipv4   = "0.0.0.0/0"
+}
+
+# AI -> ECS Host (Service Connect 프록시로 Backend 콜백 호출. 동적 호스트 포트)
+resource "aws_vpc_security_group_egress_rule" "ai_service_connect_to_ecs_host" {
+  security_group_id = aws_security_group.ai.id
+  description       = "Allow Service Connect proxy traffic to backend on dynamic host ports"
+
+  ip_protocol                  = "tcp"
+  from_port                    = 32768
+  to_port                      = 65535
+  referenced_security_group_id = aws_security_group.ecs_host.id
 }
 
 # ---------- RDS ----------

@@ -16,8 +16,23 @@ resource "aws_ecs_cluster" "main" {
     value = "disabled"
   }
 
+  # Service Connect 기본 네임스페이스 (서비스 간 호출 이름 등록)
+  service_connect_defaults {
+    namespace = aws_service_discovery_http_namespace.main.arn
+  }
+
   tags = {
     Name = "${var.name}-cluster"
+  }
+}
+
+# Service Connect 네임스페이스. AI -> Backend 콜백을 내부 이름(backend:8080)으로 호출
+resource "aws_service_discovery_http_namespace" "main" {
+  name        = var.name
+  description = "ECS Service Connect namespace"
+
+  tags = {
+    Name = var.name
   }
 }
 

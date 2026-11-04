@@ -6,6 +6,8 @@ locals {
     FAKE_LLM_DELAY_SEC = "50"
     SAVE_MODE          = "OFF"
 
+    BE_CALLBACK_BASE_URL = "http://backend:8080"
+
     # 글쓰기 LLM (claude 또는 vllm)
     LLM_WRITE_BACKEND = "vllm"
     VLLM_MODEL        = "kgb-writer"
