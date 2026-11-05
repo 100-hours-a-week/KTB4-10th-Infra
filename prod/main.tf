@@ -28,6 +28,21 @@ provider "aws" {
   }
 }
 
+# CloudFront용 인증서
+provider "aws" {
+  alias               = "us_east_1"
+  region              = "us-east-1"
+  allowed_account_ids = var.allowed_account_ids
+
+  default_tags {
+    tags = {
+      Project     = "KGB-V2"
+      Environment = "prod"
+      ManagedBy   = "Terraform"
+    }
+  }
+}
+
 module "network" {
   source = "../modules/network"
   name   = var.name
