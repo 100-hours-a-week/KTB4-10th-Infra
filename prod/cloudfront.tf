@@ -82,7 +82,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   origin {
     origin_id                = local.cloudfront_storage_origin_id
-    domain_name              = "${var.backend_storage_bucket_name}.s3.ap-northeast-2.amazonaws.com"
+    domain_name              = aws_s3_bucket.backend_storage.bucket_regional_domain_name
     origin_access_control_id = aws_cloudfront_origin_access_control.storage.id
   }
 
