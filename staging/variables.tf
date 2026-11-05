@@ -209,6 +209,12 @@ variable "backend_memory" {
   default     = 1280
 }
 
+variable "backend_storage_bucket_name" {
+  description = "Backend 파일 저장 S3 버킷 이름 (Tour API 스냅샷)"
+  type        = string
+  default     = "kgb-staging-storage"
+}
+
 variable "backend_db_username" {
   description = "Backend가 사용할 RDS 계정 이름 (V1 테스트 Backend도 같은 계정)"
   type        = string
