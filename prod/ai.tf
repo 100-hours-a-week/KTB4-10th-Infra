@@ -10,7 +10,8 @@ locals {
     LLM_WRITE_BACKEND = "vllm"
     VLLM_MODEL        = "kgb-writer"
 
-    # Langfuse 트레이스 환경 구분 (키, 주소는 Parameter Store)
-    LANGFUSE_TRACING_ENVIRONMENT = "prod"
+    # Langfuse (키는 Parameter Store)
+    LANGFUSE_BASE_URL            = "https://jp.cloud.langfuse.com"
+    LANGFUSE_TRACING_ENVIRONMENT = "production"
   }
 }
