@@ -11,5 +11,9 @@ locals {
     # 글쓰기 LLM (claude 또는 vllm)
     LLM_WRITE_BACKEND = "vllm"
     VLLM_MODEL        = "kgb-writer"
+
+    # Langfuse (키는 Parameter Store)
+    LANGFUSE_BASE_URL            = "https://jp.cloud.langfuse.com"
+    LANGFUSE_TRACING_ENVIRONMENT = "staging"
   }
 }

@@ -225,7 +225,10 @@ module "ai" {
   service_connect_namespace_arn = module.ecs.service_connect_namespace_arn
 
   # LLM_MODE는 코드 수정 없이 바꾸도록 Parameter Store에서 주입
-  secret_names = ["ANTHROPIC_API_KEY", "VLLM_BASE_URL", "VLLM_API_KEY", "LLM_MODE"]
+  secret_names = [
+    "ANTHROPIC_API_KEY", "VLLM_BASE_URL", "VLLM_API_KEY", "LLM_MODE",
+    "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
+  ]
 
   # Backend 콜백 인증 토큰 (Backend와 같은 shared 파라미터)
   external_secrets = {

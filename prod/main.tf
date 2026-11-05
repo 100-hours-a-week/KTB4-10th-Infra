@@ -173,6 +173,11 @@ module "ai" {
   port               = var.ai_port
   memory             = var.ai_memory
   environment        = local.ai_environment
+
+  secret_names = [
+    "ANTHROPIC_API_KEY", "VLLM_BASE_URL", "VLLM_API_KEY",
+    "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
+  ]
 }
 
 # 모니터링 Daemon (클러스터의 모든 서버에 1개씩)
