@@ -38,8 +38,9 @@ locals {
     NOTIFICATION_REDIS_CHANNEL     = "kgb:staging:notification:sse"
     COUPON_ATTEMPT_REDIS_NAMESPACE = "kgb:staging:coupon:attempt"
 
-    # Tour API (V1 테스트와 동시 실행 방지, 전환 리허설 때 켜고 끄는 순서 검증)
-    TOUR_API_SCHEDULER_ENABLED = "false"
+    # Tour API (원본 스냅샷은 staging 버킷에 저장, 7일 뒤 삭제)
+    TOUR_API_SCHEDULER_ENABLED = "true"
+    TOUR_API_SNAPSHOT_LOCATION = "s3://${aws_s3_bucket.backend_storage.bucket}/tour-api/raw"
 
     # 웹 푸시 (공개 키는 prod와 같음. 비공개 키를 넣지 않으면 실제 사용자에게 발송되지 않음)
     WEB_PUSH_VAPID_PUBLIC_KEY = "BNZ3naXJsQwUgRjK5S1RMQP00mDtF_SBpTDXya5FdleUIJ2SDU2F32AYvYtcYr-BGKNWbA08MYzB0VGfxw7HXcM"

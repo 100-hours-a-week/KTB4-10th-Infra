@@ -71,6 +71,8 @@ module "iam" {
   frontend_bucket_name                = var.frontend_bucket_name
   frontend_cloudfront_distribution_id = var.frontend_cloudfront_distribution_id
 
+  backend_storage_bucket_name = aws_s3_bucket.backend_storage.bucket
+
   nat_instance_ids = module.nat.instance_ids
 }
 
