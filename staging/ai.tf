@@ -11,5 +11,8 @@ locals {
     # 글쓰기 LLM (claude 또는 vllm)
     LLM_WRITE_BACKEND = "vllm"
     VLLM_MODEL        = "kgb-writer"
+
+    # Langfuse 트레이스 환경 구분
+    LANGFUSE_TRACING_ENVIRONMENT = "staging"
   }
 }
