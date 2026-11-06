@@ -28,6 +28,21 @@ provider "aws" {
   }
 }
 
+# CloudFront용 인증서
+provider "aws" {
+  alias               = "us_east_1"
+  region              = "us-east-1"
+  allowed_account_ids = var.allowed_account_ids
+
+  default_tags {
+    tags = {
+      Project     = "KGB-V2"
+      Environment = "prod"
+      ManagedBy   = "Terraform"
+    }
+  }
+}
+
 module "network" {
   source = "../modules/network"
   name   = var.name
@@ -142,9 +157,9 @@ module "backend" {
   # 일반 환경 변수는 backend.tf, 비밀 값은 Parameter Store
   environment = local.backend_environment
 
-  # 콘솔에서 만든 Redis 인증 토큰 (backend.tf)
+  # Redis 인증 토큰 (redis.tf)
   external_secrets = {
-    REDIS_PASSWORD = data.aws_secretsmanager_secret.redis_auth_token.arn
+    REDIS_PASSWORD = aws_secretsmanager_secret.redis_auth_token.arn
   }
 
   target_group_arn = module.alb.target_group_arn
