@@ -12,8 +12,14 @@ locals {
     LLM_WRITE_BACKEND = "vllm"
     VLLM_MODEL        = "kgb-writer"
 
+    # 작업 큐 워커 수 (동시 생성 수, 기본 3)
+    JOB_WORKERS = "30"
+
     # Langfuse (키는 Parameter Store)
     LANGFUSE_BASE_URL            = "https://jp.cloud.langfuse.com"
     LANGFUSE_TRACING_ENVIRONMENT = "staging"
+
+    # 부하 테스트 중 트레이스 전송 끄기
+    LANGFUSE_TRACING_ENABLED = "false"
   }
 }
